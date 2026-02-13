@@ -253,32 +253,19 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         screenshot_path.write_bytes(image_data)
         return web.json_response({"path": str(screenshot_path)})
 
-    async def handle_api_overlay_show_image(request: web.Request) -> web.Response:
-        """オーバーレイに画像を表示する。URLまたはbase64データで指定可能。"""
-        payload = await _read_json_body(request)
-        url = payload.get("url", "")
-        position = payload.get("position", "center")  # center, top-left, etc.
-        size = payload.get("size", "60vw")
-        duration = payload.get("duration", 10)
-        sse_data = {
-            "url": url,
-            "position": position,
-            "size": size,
-            "duration": duration,
-        }
-        await _broadcast_sse(ctx, "image", json.dumps(sse_data))
-        return web.json_response({"result": "ok"})
-
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
-        """オーバーレイに動的HTMLを注入する。"""
+        """オーバーレイに動的HTMLを注入する。duration指定時は自動消去。"""
         payload = await _read_json_body(request)
         html_content = payload.get("html", "")
         css_content = payload.get("css", "")
+        duration = payload.get("duration")  # 秒数 or None
         sse_data: dict[str, Any] = {}
         if html_content is not None:
             sse_data["html"] = html_content
         if css_content:
             sse_data["css"] = css_content
+        if duration is not None:
+            sse_data["duration"] = duration
         await _broadcast_sse(ctx, "html", json.dumps(sse_data))
         return web.json_response({"result": "ok"})
 
@@ -309,7 +296,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
     app.router.add_get("/api/screenshot", handle_api_screenshot)
-    app.router.add_post("/api/overlay/image", handle_api_overlay_show_image)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/reload", handle_api_overlay_reload)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)

@@ -71,23 +71,21 @@
       z-index: 20;
     }
 
-    #generated-image {
+    #dynamic-content {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      max-width: 60vw;
-      max-height: 60vh;
-      border-radius: 12px;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
-      opacity: 0;
-      transition: opacity 0.5s ease;
-      z-index: 15;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       pointer-events: none;
+      z-index: 16;
     }
 
-    #generated-image.visible {
-      opacity: 1;
+    #dynamic-content > * {
+      pointer-events: auto;
     }
   </style>
 </head>
@@ -100,7 +98,6 @@
   <div id="subtitle">
     <div id="text"></div>
   </div>
-  <img id="generated-image" src="" alt="">
   <div id="dynamic-content"></div>
   <div id="status">Loading...</div>
 
@@ -110,6 +107,7 @@
     const statusEl = document.getElementById('status');
     const mouthImg = document.getElementById('sprite-mouth');
     let hideTimer = null;
+    let htmlHideTimer = null;
     let audioCtx = null;
 
     const MOUTH_OPEN_SRC = 'sprites/mouth_open.png';
@@ -219,13 +217,6 @@
         }
       });
 
-      es.addEventListener('image', (e) => {
-        const data = JSON.parse(e.data);
-        if (data.url) {
-          showGeneratedImage(data.url, data.duration || 10, data.position || 'center', data.size);
-        }
-      });
-
       es.addEventListener('html', (e) => {
         const data = JSON.parse(e.data);
         const container = document.getElementById('dynamic-content');
@@ -240,6 +231,13 @@
             document.head.appendChild(styleEl);
           }
           styleEl.textContent = data.css;
+        }
+        // duration指定があれば自動消去
+        if (data.duration && data.duration > 0) {
+          clearTimeout(htmlHideTimer);
+          htmlHideTimer = setTimeout(() => {
+            container.innerHTML = '';
+          }, data.duration * 1000);
         }
       });
 
@@ -256,45 +254,6 @@
       es.onopen = () => {
         statusEl.textContent = 'Sprite OK';
       };
-    }
-
-    // --- 画像表示 ---
-    const genImageEl = document.getElementById('generated-image');
-    let imageHideTimer = null;
-
-    const POSITIONS = {
-      'center': { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' },
-      'top-left': { top: '5%', left: '5%', transform: 'none' },
-      'top-right': { top: '5%', right: '5%', left: 'auto', transform: 'none' },
-      'bottom-left': { bottom: '5%', left: '5%', top: 'auto', transform: 'none' },
-      'bottom-right': { bottom: '5%', right: '5%', top: 'auto', left: 'auto', transform: 'none' },
-    };
-
-    function showGeneratedImage(url, durationSec, position, size) {
-      clearTimeout(imageHideTimer);
-      // url が空なら非表示にする
-      if (!url) {
-        genImageEl.classList.remove('visible');
-        return;
-      }
-      genImageEl.src = url;
-      // 位置を設定
-      const pos = POSITIONS[position] || POSITIONS['center'];
-      Object.assign(genImageEl.style, {
-        top: '', left: '', right: '', bottom: '', transform: ''
-      });
-      Object.assign(genImageEl.style, pos);
-      // サイズを設定
-      if (size) {
-        genImageEl.style.maxWidth = size;
-      }
-      genImageEl.classList.add('visible');
-      // duration=0 なら消えない
-      if (durationSec > 0) {
-        imageHideTimer = setTimeout(() => {
-          genImageEl.classList.remove('visible');
-        }, durationSec * 1000);
-      }
     }
 
     // --- 起動 ---

@@ -172,28 +172,15 @@ def _cmd_screenshot(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_overlay_image(args: argparse.Namespace) -> int:
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/overlay/image",
-        json_body={
-            "url": args.url,
-            "position": args.position,
-            "size": args.size,
-            "duration": args.duration,
-        },
-    )
-    print(resp.json().get("result", ""))
-    return 0
-
-
 def _cmd_overlay_html(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {"html": args.html, "css": args.css or ""}
+    if args.duration is not None:
+        body["duration"] = args.duration
     resp = _request(
         args.base_url,
         "POST",
         "/api/overlay/html",
-        json_body={"html": args.html, "css": args.css or ""},
+        json_body=body,
     )
     print(resp.json().get("result", ""))
     return 0
@@ -244,16 +231,10 @@ def _build_parser() -> argparse.ArgumentParser:
     screenshot = subparsers.add_parser("screenshot", help="スクリーンショットを保存")
     screenshot.set_defaults(func=_cmd_screenshot)
 
-    overlay_image = subparsers.add_parser("overlay-image", help="オーバーレイに画像表示")
-    overlay_image.add_argument("url", help="表示する画像のURL")
-    overlay_image.add_argument("--position", default="center", help="表示位置 (center/top-left/top-right/bottom-left/bottom-right)")
-    overlay_image.add_argument("--size", default="60vw", help="最大サイズ (CSS値)")
-    overlay_image.add_argument("--duration", type=int, default=10, help="表示秒数")
-    overlay_image.set_defaults(func=_cmd_overlay_image)
-
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")
     overlay_html.add_argument("--css", default="", help="追加CSSスタイル")
+    overlay_html.add_argument("--duration", type=int, default=None, help="自動消去までの秒数")
     overlay_html.set_defaults(func=_cmd_overlay_html)
 
     overlay_reload = subparsers.add_parser("overlay-reload", help="オーバーレイをリロード")
