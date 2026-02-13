@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      background-color: rgba(0, 0, 0, 0) !important;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: 'M PLUS Rounded 1c', 'Noto Sans JP', 'Yu Gothic UI', sans-serif;
+    }
+
+    #character {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      height: 50vh;
+    }
+
+    #character img {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      height: 100%;
+      width: auto;
+    }
+
+    #subtitle {
+      position: fixed;
+      bottom: 5vh;
+      right: 12vw;
+      max-width: 35vw;
+      padding: 12px 28px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #7eeda9;
+      font-size: clamp(14px, 1.3vw, 30px);
+      font-weight: bold;
+      border-radius: 12px;
+      text-align: left;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8);
+      line-height: 1.4;
+      z-index: 10;
+    }
+
+    #subtitle.visible {
+      opacity: 1;
+    }
+
+    #name {
+      color: #ffd700;
+      font-size: clamp(16px, 1.5vw, 34px);
+      margin-bottom: 2px;
+    }
+
+    #status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+      z-index: 20;
+    }
+
+    #generated-image {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 60vw;
+      max-height: 60vh;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      z-index: 15;
+      pointer-events: none;
+    }
+
+    #generated-image.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="character">
+    <img id="sprite-base" src="sprites/base.png" alt="">
+    <img id="sprite-mouth" src="sprites/mouth_closed.png" alt="">
+  </div>
+  <div id="subtitle">
+    <div id="text"></div>
+  </div>
+  <img id="generated-image" src="" alt="">
+  <div id="dynamic-content"></div>
+  <div id="status">Loading...</div>
+
+  <script>
+    const subtitleEl = document.getElementById('subtitle');
+    const textEl = document.getElementById('text');
+    const statusEl = document.getElementById('status');
+    const mouthImg = document.getElementById('sprite-mouth');
+    let hideTimer = null;
+    let audioCtx = null;
+
+    const MOUTH_OPEN_SRC = 'sprites/mouth_open.png';
+    const MOUTH_HO_SRC = 'sprites/mouth_ho.png';
+    const MOUTH_O_SRC = 'sprites/mouth_o.png';
+    const MOUTH_CLOSED_SRC = 'sprites/mouth_closed.png';
+    const MOUTH_CYCLE = [MOUTH_CLOSED_SRC, MOUTH_HO_SRC, MOUTH_O_SRC, MOUTH_OPEN_SRC];
+
+    // 画像プリロード
+    new Image().src = MOUTH_OPEN_SRC;
+    new Image().src = MOUTH_HO_SRC;
+    new Image().src = MOUTH_O_SRC;
+    new Image().src = MOUTH_CLOSED_SRC;
+
+    // --- スプライト初期化 ---
+    function initSprite() {
+      const baseImg = document.getElementById('sprite-base');
+      if (baseImg.complete && baseImg.naturalWidth > 0) {
+        statusEl.textContent = 'Sprite OK';
+      } else {
+        baseImg.onload = () => { statusEl.textContent = 'Sprite OK'; };
+        baseImg.onerror = () => { statusEl.textContent = 'Sprite: image not found'; };
+      }
+    }
+
+    // --- 口パク (タイマーベースで3段階サイクル) ---
+    let lipSyncTimer = null;
+    let mouthFrame = 0;
+
+    function startLipSync(durationSec) {
+      stopLipSync();
+      mouthFrame = 0;
+      function nextFrame() {
+        // ランダムに口の形を選ぶ (ただし同じ形が連続しにくくする)
+        let next;
+        do {
+          next = Math.floor(Math.random() * MOUTH_CYCLE.length);
+        } while (next === mouthFrame && MOUTH_CYCLE.length > 1);
+        mouthFrame = next;
+        mouthImg.src = MOUTH_CYCLE[mouthFrame];
+        const delay = 80 + Math.random() * 120;
+        lipSyncTimer = setTimeout(nextFrame, delay);
+      }
+      nextFrame();
+      // 音声の長さ分で自動停止
+      if (durationSec > 0) {
+        setTimeout(() => stopLipSync(), durationSec * 1000);
+      }
+    }
+
+    function stopLipSync() {
+      if (lipSyncTimer) {
+        clearTimeout(lipSyncTimer);
+        lipSyncTimer = null;
+      }
+      mouthFrame = 0;
+      mouthImg.src = MOUTH_CLOSED_SRC;
+    }
+
+    async function doLipSync(audioUrl) {
+      try {
+        const res = await fetch(audioUrl);
+        const buf = await res.arrayBuffer();
+        // WAVヘッダーからサンプルレートとデータサイズを取得して再生時間を計算
+        const view = new DataView(buf);
+        const sampleRate = view.getUint32(24, true);
+        const dataSize = view.getUint32(40, true);
+        const channels = view.getUint16(22, true);
+        const bitsPerSample = view.getUint16(34, true);
+        const duration = dataSize / (sampleRate * channels * (bitsPerSample / 8));
+        startLipSync(duration);
+      } catch (e) {
+        // フォールバック: 3秒間口パク
+        console.warn('Lip sync audio fetch failed, using fallback:', e);
+        startLipSync(3);
+      }
+    }
+
+    // --- SSE 接続 (字幕 + 口パク) ---
+    function connectSSE() {
+      const es = new EventSource('/overlay/events');
+
+      es.addEventListener('subtitle', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const text = data.text || '';
+          if (text) {
+            textEl.textContent = text;
+            subtitleEl.classList.add('visible');
+            clearTimeout(hideTimer);
+          } else {
+            hideTimer = setTimeout(() => subtitleEl.classList.remove('visible'), 500);
+          }
+        } catch (err) {
+          if (e.data) {
+            textEl.textContent = e.data;
+            subtitleEl.classList.add('visible');
+            clearTimeout(hideTimer);
+          }
+        }
+      });
+
+      es.addEventListener('speak', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.audioUrl) {
+          doLipSync(data.audioUrl);
+        }
+      });
+
+      es.addEventListener('image', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.url) {
+          showGeneratedImage(data.url, data.duration || 10, data.position || 'center', data.size);
+        }
+      });
+
+      es.addEventListener('html', (e) => {
+        const data = JSON.parse(e.data);
+        const container = document.getElementById('dynamic-content');
+        if (data.html !== undefined) {
+          container.innerHTML = data.html;
+        }
+        if (data.css) {
+          let styleEl = document.getElementById('dynamic-style');
+          if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = 'dynamic-style';
+            document.head.appendChild(styleEl);
+          }
+          styleEl.textContent = data.css;
+        }
+      });
+
+      es.addEventListener('reload', () => {
+        location.reload();
+      });
+
+      es.onerror = () => {
+        es.close();
+        statusEl.textContent = 'Reconnecting...';
+        setTimeout(connectSSE, 2000);
+      };
+
+      es.onopen = () => {
+        statusEl.textContent = 'Sprite OK';
+      };
+    }
+
+    // --- 画像表示 ---
+    const genImageEl = document.getElementById('generated-image');
+    let imageHideTimer = null;
+
+    const POSITIONS = {
+      'center': { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' },
+      'top-left': { top: '5%', left: '5%', transform: 'none' },
+      'top-right': { top: '5%', right: '5%', left: 'auto', transform: 'none' },
+      'bottom-left': { bottom: '5%', left: '5%', top: 'auto', transform: 'none' },
+      'bottom-right': { bottom: '5%', right: '5%', top: 'auto', left: 'auto', transform: 'none' },
+    };
+
+    function showGeneratedImage(url, durationSec, position, size) {
+      clearTimeout(imageHideTimer);
+      // url が空なら非表示にする
+      if (!url) {
+        genImageEl.classList.remove('visible');
+        return;
+      }
+      genImageEl.src = url;
+      // 位置を設定
+      const pos = POSITIONS[position] || POSITIONS['center'];
+      Object.assign(genImageEl.style, {
+        top: '', left: '', right: '', bottom: '', transform: ''
+      });
+      Object.assign(genImageEl.style, pos);
+      // サイズを設定
+      if (size) {
+        genImageEl.style.maxWidth = size;
+      }
+      genImageEl.classList.add('visible');
+      // duration=0 なら消えない
+      if (durationSec > 0) {
+        imageHideTimer = setTimeout(() => {
+          genImageEl.classList.remove('visible');
+        }, durationSec * 1000);
+      }
+    }
+
+    // --- 起動 ---
+    initSprite();
+    connectSSE();
+  </script>
+</body>
+
+</html>

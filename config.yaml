@@ -1,0 +1,29 @@
+
+voicevox:
+  url: "http://localhost:50021"
+  speaker_id: 1              # ずんだもん (ノーマル)
+
+vad:
+  speech_threshold: 0.5     # VAD確率の閾値
+  silence_duration: 1.5     # 沈黙1.5秒で発話終了
+  min_speech_sec: 0.0       # 最短発話長（未満はスキップ）
+  max_speech_sec: 30        # 最大バッファ（超過で強制転写）
+  pre_buffer_sec: 0.5       # プリバッファ秒数（発話冒頭の切れ防止）
+
+obs:
+  host: "127.0.0.1"
+  port: 4455                  # OBS WebSocket デフォルトポート
+  password: ""                # OBS WebSocket パスワード（空なら認証なし）
+
+onecomme:
+  enabled: true               # trueにするとわんコメからコメント受信開始
+  host: "127.0.0.1"
+  port: 11180                 # わんコメのデフォルトポート
+
+whisper:
+  model: "large-v3"              # faster-whisper モデル (tiny/base/small/medium/large-v3)
+  language: "ja"
+  device: "cuda"
+  compute_type: "auto"
+  beam_size: 1
+  no_speech_threshold: 0.8
