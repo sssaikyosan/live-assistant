@@ -13,7 +13,7 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 live-assistant serve
 ```
 
-2. 配信開始時に前回ログを読み込み、トピックを初期化する。
+2. 配信開始時に永続メモリ（context）を読み込み、トピックを初期化する。
 
 ```bash
 live-assistant start-stream
@@ -74,13 +74,31 @@ live-assistant screenshot
 
 ## Note Operations
 
-トピックや申し送りは `memory/*.md` に保存する。
+### topics（揮発・配信ごとにリセット）
+
+調査ネタや話題のストックを保存する。`start-stream` で自動リセットされる。
 
 ```bash
 live-assistant save-note topics "追記内容"
 live-assistant load-note topics
-live-assistant save-note context "更新済み配信ログ"
+```
+
+### context（永続メモリ・プロジェクト横断）
+
+配信を通じて蓄積する長期記憶。以下を記録・更新する。
+
+- **配信者の好み・進捗**: プレイ中ゲームの状況、好きなジャンル、配信スタイル
+- **視聴者との関係性**: 常連の名前・特徴、過去のやり取り
+- **学んだこと**: 配信で得た知見、うまくいった対応、失敗した対応
+
+運用ルール:
+- 配信終了時に、その日の重要な情報を既存内容に**マージ**する（上書きしない）
+- 古くなった情報は整理・削除して肥大化を防ぐ
+- 更新時は `load-note context` で現在の内容を読み、編集してから `save-note context` で保存する
+
+```bash
 live-assistant load-note context
+live-assistant save-note context "マージ済みの全文"
 ```
 
 ## Topic Research Sub-Agent

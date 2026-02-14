@@ -871,8 +871,8 @@ def _resolve_note_path(app_ctx: AppContext, key: str) -> Path:
 
 
 def _start_stream_impl(app_ctx: AppContext) -> str:
-    """配信開始時に context 読み込み + topics リセットを行う。"""
-    # context.md を読み込む
+    """配信開始時に永続メモリ(context)読み込み + topics リセットを行う。"""
+    # context.md (永続メモリ) を読み込む
     context_file = _resolve_note_path(app_ctx, "context")
     context_content = ""
     if context_file.is_file():
@@ -885,7 +885,7 @@ def _start_stream_impl(app_ctx: AppContext) -> str:
     topics_file.write_text("", encoding="utf-8")
     logger.info("[start_stream] topics.md をリセットしました")
 
-    return context_content if context_content else "(前回の配信ログはありません)"
+    return context_content if context_content else "(永続メモリはまだありません)"
 
 
 def _save_note_impl(app_ctx: AppContext, key: str, content: str) -> str:
