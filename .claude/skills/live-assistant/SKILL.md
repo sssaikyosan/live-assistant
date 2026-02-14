@@ -37,11 +37,7 @@ live-assistant speak "返答テキスト"
 # BLOCKED/BUSY が返った場合 → sleep 3 → ループ先頭へ（new の内容は保持）
 ```
 
-6. `speak` 成功後は短い再待機でキュー残りを確認する。
-
-```bash
-live-assistant wait --timeout-sec 3
-```
+6. `speak` 成功後はループ先頭に戻る。
 
 ## Response Before Action
 
