@@ -89,7 +89,7 @@ class AppContext:
     pygame_initialized: bool = False
     mic_task: asyncio.Task | None = None
     onecomme_task: asyncio.Task | None = None
-    mic_vad_state: str = "IDLE"  # "IDLE" | "SPEAKING" | "TRAILING"
+    mic_vad_state: str = "IDLE"  # "IDLE" | "SPEAKING" | "TRAILING" | "TRANSCRIBING"
     whisper_model: Any = None
     history: list[dict] = field(default_factory=list)
     _history_max: int = 20
@@ -217,12 +217,8 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             result = await _speak_impl(ctx, text)
             return web.json_response({"result": result})
         else:
-            if ctx._speak_lock.locked():
-                return web.json_response(
-                    {"result": "BUSY: 前の発話が再生中です", "busy": True}
-                )
-            asyncio.create_task(_speak_impl(ctx, text))
-            return web.json_response({"result": f"発話キュー投入: {text}"})
+            result = await _speak_impl(ctx, text)
+            return web.json_response({"result": result})
 
     async def handle_api_status(request: web.Request) -> web.Response:
         return web.json_response(_get_stream_status_impl(ctx))
@@ -547,6 +543,7 @@ async def _continuous_mic_loop(ctx: AppContext) -> None:
 
                 if elapsed >= max_speech_sec:
                     logger.info("[mic] 最大バッファ超過 (%.1f秒), 強制文字起こし", elapsed)
+                    ctx.mic_vad_state = "TRANSCRIBING"
                     await _transcribe_and_enqueue(ctx, speech_buf)
                     speech_buf = []
                     ring_buf.clear()
@@ -566,6 +563,7 @@ async def _continuous_mic_loop(ctx: AppContext) -> None:
                 elif now - silence_start_time >= silence_duration:
                     speech_dur = now - speech_start_time
                     logger.info("[mic] 発話終了検出 (発話%.1f秒, 無音%.1f秒)", speech_dur, silence_duration)
+                    ctx.mic_vad_state = "TRANSCRIBING"
                     await _transcribe_and_enqueue(ctx, speech_buf)
                     speech_buf = []
                     ring_buf.clear()
@@ -731,13 +729,13 @@ async def _speak_impl(app_ctx: AppContext, text: str) -> str:
 
 async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
     """speak の排他ロック内で実行される本体。"""
-    # 配信者が発話中なら最大5秒待ってIDLEになるのを待つ
-    for _ in range(50):  # 50 * 0.1s = 5s
+    # 配信者が発話中なら最大2秒待ってIDLEになるのを待つ
+    for _ in range(20):  # 20 * 0.1s = 2s
         if app_ctx.mic_vad_state == "IDLE":
             break
         await asyncio.sleep(0.1)
     else:
-        return f"BLOCKED: 配信者が発話中です (state={app_ctx.mic_vad_state})"
+        return f"BUSY: 2秒待機しましたが発話中です (state={app_ctx.mic_vad_state})"
 
     voicevox_config = app_ctx.config.get("voicevox", {})
     base_url = voicevox_config.get("url", "http://localhost:50021").rstrip("/")
