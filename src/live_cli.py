@@ -141,6 +141,9 @@ def _cmd_start_stream(args: argparse.Namespace) -> int:
     resp = _request(args.base_url, "POST", "/api/start_stream", json_body={})
     data = resp.json()
     print(data.get("context", ""))
+    screenshot_path = data.get("screenshot_path")
+    if screenshot_path:
+        print(f"\nscreenshot_path: {screenshot_path}")
     return 0
 
 
@@ -167,12 +170,6 @@ def _cmd_load_note(args: argparse.Namespace) -> int:
     print(data.get("content", ""))
     return 0
 
-
-def _cmd_screenshot(args: argparse.Namespace) -> int:
-    resp = _request(args.base_url, "GET", "/api/screenshot")
-    data = resp.json()
-    print(data.get("path", ""))
-    return 0
 
 
 def _cmd_overlay_html(args: argparse.Namespace) -> int:
@@ -223,9 +220,6 @@ def _build_parser() -> argparse.ArgumentParser:
     load_note = subparsers.add_parser("load-note", help="memory/{key}.md を表示")
     load_note.add_argument("key")
     load_note.set_defaults(func=_cmd_load_note)
-
-    screenshot = subparsers.add_parser("screenshot", help="スクリーンショットを保存")
-    screenshot.set_defaults(func=_cmd_screenshot)
 
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")

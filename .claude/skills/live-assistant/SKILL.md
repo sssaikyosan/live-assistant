@@ -10,7 +10,7 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 - **メインエージェント**: Sonnet（拡張思考なし）— 応答速度を最優先。wait → speak のループを高速に回す。
 - **サブエージェント**: Opus（拡張思考あり）— 重い処理を委任。Task ツールで `model: "opus"` を指定して起動する。
 
-メインが担当する処理: `wait`, `speak`, `screenshot`（取得のみ）
+メインが担当する処理: `wait`, `speak`, 画面確認（Read ツールで `screenshot.jpg` を読む）
 サブエージェントに委任する処理: トピック調査、画面分析・実況、オーバーレイ表示、ノート保存
 
 ## Start Service
@@ -21,7 +21,7 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 live-assistant serve
 ```
 
-2. 配信開始時に永続メモリ（context）を読み込み、トピックを初期化する。
+2. 配信開始時に永続メモリ（context）を読み込み、トピックを初期化する。出力に `screenshot_path` が含まれるので保持する。
 
 ```bash
 live-assistant start-stream
@@ -40,7 +40,7 @@ live-assistant start-stream
 時間のかかる操作（スクショ撮影、Web検索、画像探し、サブエージェント起動など）を行う前に、`speak` で一言伝えてから実行する。BLOCKED/BUSY が返った場合は speak を諦めてそのまま操作に進む（wait に戻らない）。
 
 例:
-- スクショ前: `speak "画面を見てみるのだ！"` → `screenshot`
+- スクショ前: `speak "画面を見てみるのだ！"` → Read ツールで `screenshot_path`
 - 調べ物前: `speak "ちょっと調べてくるのだ！"` → Web検索/サブエージェント
 - 画像探し前: `speak "画像を探してくるのだ！"` → 画像検索
 
@@ -52,7 +52,7 @@ live-assistant start-stream
 配信開始時にバックグラウンドで起動。ニュース・ゲーム情報・雑談ネタを調査して `topics` ノートに保存する。トピックにはソースURLを含める。
 
 ### 画面分析エージェント
-`screenshot` で取得した画像をバックグラウンドサブエージェントに渡して分析・実況テキスト生成を依頼。完了通知が来たら結果を確認し、メインが `speak` する。
+`screenshot_path` を Read ツールで読み、バックグラウンドサブエージェントに渡して分析・実況テキスト生成を依頼。完了通知が来たら結果を確認し、メインが `speak` する。
 
 ### オーバーレイエージェント
 オーバーレイ表示が必要な場面（グラフ、画像、エフェクトなど）をバックグラウンドサブエージェントに委任。サブエージェントが直接 `overlay-html` コマンドを実行する。画像表示が必要な場合はソースページから画像URLを取得し、`<img>` タグとして表示する。
@@ -72,12 +72,7 @@ live-assistant start-stream
 沈黙が15秒以上続いたら自律行動を行う。自律発言後は15秒間待つ。
 
 1. `topics` ノートにネタがあれば優先して使う。
-2. 必要なら画面を取得して実況する。
-
-```bash
-live-assistant screenshot
-```
-
+2. 必要なら Read ツールで `screenshot_path` を読んで実況する（サーバーが定期的に自動保存している）。
 3. 直近話題の発展、調査結果共有、雑談の順で話題を作る。
 
 ## Overlay Operations

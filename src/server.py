@@ -271,7 +271,10 @@ def _create_http_app(ctx: AppContext) -> web.Application:
 
     async def handle_api_start_stream(request: web.Request) -> web.Response:
         context_content = _start_stream_impl(ctx)
-        return web.json_response({"context": context_content})
+        return web.json_response({
+            "context": context_content,
+            "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
+        })
 
     async def handle_api_save_note(request: web.Request) -> web.Response:
         payload = await _read_json_body(request)
@@ -297,14 +300,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             return web.json_response({"content": content})
         except ValueError as e:
             return web.json_response({"error": str(e)}, status=400)
-
-    async def handle_api_screenshot(request: web.Request) -> web.Response:
-        screenshot_path = _PROJECT_ROOT / "screenshot.jpg"
-        if not screenshot_path.exists():
-            # 自動キャプチャがまだ走っていない場合はその場で取得
-            image_data = _take_screenshot_jpeg(ctx.config)
-            screenshot_path.write_bytes(image_data)
-        return web.json_response({"path": str(screenshot_path)})
 
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
         """オーバーレイに動的HTMLを注入する。"""
@@ -340,8 +335,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/save_note", handle_api_save_note)
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
-    app.router.add_get("/api/screenshot", handle_api_screenshot)
-    app.router.add_post("/api/overlay/html", handle_api_overlay_html)
+app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
     app.router.add_get("/overlay/audio/{audio_id}", handle_overlay_audio)
@@ -942,6 +936,7 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
         "pending_comments_in_queue": app_ctx.event_queue.qsize(),
         "mic_task_status": mic_status,
         "mic_vad_state": app_ctx.mic_vad_state,
+        "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
     }
 
 
