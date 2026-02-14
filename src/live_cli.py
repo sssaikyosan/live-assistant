@@ -173,23 +173,15 @@ def _cmd_screenshot(args: argparse.Namespace) -> int:
 
 
 def _cmd_overlay_html(args: argparse.Namespace) -> int:
-    body: dict[str, Any] = {"html": args.html, "css": args.css or ""}
-    if args.duration is not None:
-        body["duration"] = args.duration
     resp = _request(
         args.base_url,
         "POST",
         "/api/overlay/html",
-        json_body=body,
+        json_body={"html": args.html, "css": args.css or ""},
     )
     print(resp.json().get("result", ""))
     return 0
 
-
-def _cmd_overlay_reload(args: argparse.Namespace) -> int:
-    resp = _request(args.base_url, "POST", "/api/overlay/reload", json_body={})
-    print(resp.json().get("result", ""))
-    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -234,11 +226,7 @@ def _build_parser() -> argparse.ArgumentParser:
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")
     overlay_html.add_argument("--css", default="", help="追加CSSスタイル")
-    overlay_html.add_argument("--duration", type=int, default=None, help="自動消去までの秒数")
     overlay_html.set_defaults(func=_cmd_overlay_html)
-
-    overlay_reload = subparsers.add_parser("overlay-reload", help="オーバーレイをリロード")
-    overlay_reload.set_defaults(func=_cmd_overlay_reload)
 
     return parser
 

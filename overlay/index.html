@@ -107,7 +107,6 @@
     const statusEl = document.getElementById('status');
     const mouthImg = document.getElementById('sprite-mouth');
     let hideTimer = null;
-    let htmlHideTimer = null;
     let audioCtx = null;
 
     const MOUTH_OPEN_SRC = 'sprites/mouth_open.png';
@@ -232,17 +231,6 @@
           }
           styleEl.textContent = data.css;
         }
-        // duration指定があれば自動消去
-        if (data.duration && data.duration > 0) {
-          clearTimeout(htmlHideTimer);
-          htmlHideTimer = setTimeout(() => {
-            container.innerHTML = '';
-          }, data.duration * 1000);
-        }
-      });
-
-      es.addEventListener('reload', () => {
-        location.reload();
       });
 
       es.onerror = () => {

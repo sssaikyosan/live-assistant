@@ -113,9 +113,7 @@ copy .claude\skills\live-assistant\SKILL.md %USERPROFILE%\.claude\skills\live-as
 | `live-assistant screenshot` | OBS 経由画面キャプチャ（絶対パスを出力） |
 | `live-assistant save-note <key> <content>` | `memory/{key}.md` 保存 |
 | `live-assistant load-note <key>` | `memory/{key}.md` 読み込み |
-| `live-assistant overlay-image <url>` | オーバーレイに画像表示 |
-| `live-assistant overlay-html <html>` | オーバーレイに動的HTML注入 |
-| `live-assistant overlay-reload` | オーバーレイをリロード |
+| `live-assistant overlay-html <html>` | オーバーレイにHTML/画像/グラフ表示（空文字でクリア） |
 
 ## 外部サービス・素材の利用について
 
@@ -124,4 +122,4 @@ copy .claude\skills\live-assistant\SKILL.md %USERPROFILE%\.claude\skills\live-as
 
 - [VOICEVOX](https://voicevox.hiroshiba.jp/) — 利用規約: https://voicevox.hiroshiba.jp/term/
 - [ずんだもん](https://zunko.jp/) — ガイドライン: https://zunko.jp/guideline.html
-- `overlay/sprites/` の立ち絵画像 — [坂本アヒル氏の素材](https://seiga.nicovideo.jp/seiga/im10788496) から `scripts/extract_sprites.py` で生成
+- `overlay/sprites/` の立ち絵画像 — [坂本アヒル氏の素材](https://seiga.nicovideo.jp/seiga/im10788496) 

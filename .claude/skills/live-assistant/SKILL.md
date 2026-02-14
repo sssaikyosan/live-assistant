@@ -77,14 +77,8 @@ live-assistant load-note context
 トピック調査サブエージェント起動時、以下の指示を prompt に含めること。
 
 ```
-## 画像の活用
-Web探索で話題に関連する有用な画像（図表・ロゴ・スクリーンショット等）を見つけた場合、
-画像サイズを取得して topics にURL・サイズ・説明を記載する。
-サイズ取得: python -c "from PIL import Image; import httpx; from io import BytesIO; img=Image.open(BytesIO(httpx.get('URL').content)); print(f'{img.width}x{img.height}')"
-記載例: [image: https://example.com/chart.png 1200x800] GPU性能比較グラフ
-```
 
-メインエージェントは `topics` の `[image: <url>]` 記載を元に `overlay-image` で画像を表示できる。
+トピックにはソースURLを含める。画像表示が必要な場合はメインエージェントがソースページから画像URLを取得し、`overlay-html` で `<img>` タグとして表示する。
 
 ## Safety
 
