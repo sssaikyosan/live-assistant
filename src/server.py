@@ -94,9 +94,10 @@ class AppContext:
     history: list[dict] = field(default_factory=list)
     _history_max: int = 20
     sse_clients: list[web.StreamResponse] = field(default_factory=list)
-    _audio_cache: dict[str, bytes] = field(default_factory=dict)
+    _audio_cache: dict[str, tuple[float, bytes]] = field(default_factory=dict)
     memory_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "memory")
     _speak_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
 
 
 # --- HTTPサーバー (コメント受信) ---
@@ -113,6 +114,38 @@ async def _broadcast_sse(ctx: AppContext, event_type: str, data: str) -> None:
             dead.append(client)
     for d in dead:
         ctx.sse_clients.remove(d)
+
+
+def _cleanup_audio_cache(ctx: AppContext, *, now: float | None = None) -> None:
+    """Overlay用音声キャッシュを期限・件数上限でクリーンアップする。"""
+    overlay_config = ctx.config.get("overlay", {})
+
+    ttl_raw = overlay_config.get("audio_cache_ttl_sec", 120)
+    max_items_raw = overlay_config.get("audio_cache_max_items", 128)
+    try:
+        ttl_sec = max(1, int(ttl_raw))
+    except (TypeError, ValueError):
+        ttl_sec = 120
+    try:
+        max_items = max(1, int(max_items_raw))
+    except (TypeError, ValueError):
+        max_items = 128
+
+    now_ts = time.time() if now is None else now
+
+    expired_ids = [
+        audio_id
+        for audio_id, (created_at, _wav_data) in ctx._audio_cache.items()
+        if now_ts - created_at > ttl_sec
+    ]
+    for audio_id in expired_ids:
+        ctx._audio_cache.pop(audio_id, None)
+
+    overflow = len(ctx._audio_cache) - max_items
+    if overflow > 0:
+        oldest_items = sorted(ctx._audio_cache.items(), key=lambda item: item[1][0])[:overflow]
+        for audio_id, _ in oldest_items:
+            ctx._audio_cache.pop(audio_id, None)
 
 
 def _create_http_app(ctx: AppContext) -> web.Application:
@@ -141,9 +174,10 @@ def _create_http_app(ctx: AppContext) -> web.Application:
 
     async def handle_overlay_audio(request: web.Request) -> web.Response:
         audio_id = request.match_info["audio_id"]
-        wav_data = ctx._audio_cache.pop(audio_id, None)
-        if wav_data is None:
+        cached_audio = ctx._audio_cache.pop(audio_id, None)
+        if cached_audio is None:
             return web.Response(status=404, text="Not found")
+        _created_at, wav_data = cached_audio
         return web.Response(
             body=wav_data,
             content_type="audio/wav",
@@ -212,13 +246,24 @@ def _create_http_app(ctx: AppContext) -> web.Application:
                 {"error": "text は必須です"},
                 status=400,
             )
-        sync = payload.get("sync", False)
+        sync = _to_bool(payload.get("sync", False), default=False)
         if sync:
             result = await _speak_impl(ctx, text)
-            return web.json_response({"result": result})
-        else:
-            result = await _speak_impl(ctx, text)
-            return web.json_response({"result": result})
+            return web.json_response({"result": result, "queued": False})
+
+        task = asyncio.create_task(_speak_impl(ctx, text))
+        ctx.background_tasks.add(task)
+
+        def _on_done(done_task: asyncio.Task[Any]) -> None:
+            ctx.background_tasks.discard(done_task)
+            try:
+                result = done_task.result()
+                logger.info("[speak] 非同期読み上げ完了: %s", result)
+            except Exception:
+                logger.exception("[speak] 非同期読み上げタスクでエラー")
+
+        task.add_done_callback(_on_done)
+        return web.json_response({"result": "queued", "queued": True})
 
     async def handle_api_status(request: web.Request) -> web.Response:
         return web.json_response(_get_stream_status_impl(ctx))
@@ -315,7 +360,7 @@ async def _enqueue_comment(ctx: AppContext, text: str, source_label: str = "comm
         "text": text,
         "time": time.time(),
         "number": ctx.total_comments,
-        "source": "comment",
+        "source": source_label,
     })
 
 
@@ -475,23 +520,43 @@ async def _continuous_mic_loop(ctx: AppContext) -> None:
     speech_threshold = vad_config.get("speech_threshold", 0.5)
     silence_duration = vad_config.get("silence_duration", 2.0)
     max_speech_sec = vad_config.get("max_speech_sec", 30)
+    try:
+        audio_queue_max_frames = max(1, int(vad_config.get("audio_queue_max_frames", 512)))
+    except (TypeError, ValueError):
+        audio_queue_max_frames = 512
 
     # プリバッファ: IDLE中の直近フレームを保持し、発話冒頭の切れを防ぐ
     pre_buffer_sec = vad_config.get("pre_buffer_sec", 0.3)
     pre_buffer_frames = max(1, int(pre_buffer_sec * sample_rate / frame_samples))
     ring_buf: deque[np.ndarray] = deque(maxlen=pre_buffer_frames)
 
-    audio_queue: asyncio.Queue[np.ndarray] = asyncio.Queue()
+    audio_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=audio_queue_max_frames)
+    dropped_frames = 0
     loop = asyncio.get_running_loop()
 
     def _audio_callback(indata: np.ndarray, _frames: int, _time_info: Any, status: Any) -> None:
         if status:
             logger.debug("sounddevice status: %s", status)
-        loop.call_soon_threadsafe(audio_queue.put_nowait, indata.copy())
+        frame_copy = indata.copy()
+
+        def _enqueue_frame() -> None:
+            nonlocal dropped_frames
+            if audio_queue.full():
+                try:
+                    audio_queue.get_nowait()
+                    dropped_frames += 1
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                audio_queue.put_nowait(frame_copy)
+            except asyncio.QueueFull:
+                dropped_frames += 1
+
+        loop.call_soon_threadsafe(_enqueue_frame)
 
     logger.info(
-        "Silero VAD 初期化完了 (threshold=%.2f, silence=%.1fs, max=%.0fs)",
-        speech_threshold, silence_duration, max_speech_sec,
+        "Silero VAD 初期化完了 (threshold=%.2f, silence=%.1fs, max=%.0fs, queue_max=%d)",
+        speech_threshold, silence_duration, max_speech_sec, audio_queue_max_frames,
     )
     logger.info("バックグラウンドマイク録音開始 (VADベース)")
 
@@ -573,15 +638,19 @@ async def _continuous_mic_loop(ctx: AppContext) -> None:
             # 定期的にハートビートログ
             if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
                 logger.info(
-                    "[mic-heartbeat] state=%s, frames=%d, queue=%d, stream_active=%s",
-                    state, frame_count, audio_queue.qsize(), stream.active,
+                    "[mic-heartbeat] state=%s, frames=%d, queue=%d, stream_active=%s, dropped=%d",
+                    state, frame_count, audio_queue.qsize(), stream.active, dropped_frames,
                 )
                 last_heartbeat = now
 
     finally:
         stream.stop()
         stream.close()
-        logger.info("[mic] ストリーム閉じました (total frames=%d)", frame_count)
+        logger.info(
+            "[mic] ストリーム閉じました (total frames=%d, dropped=%d)",
+            frame_count,
+            dropped_frames,
+        )
 
 
 # --- Lifespan ---
@@ -652,13 +721,14 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
     try:
         yield ctx
     finally:
-        for task in (ctx.mic_task, ctx.onecomme_task):
+        for task in (ctx.mic_task, ctx.onecomme_task, *list(ctx.background_tasks)):
             if task is not None:
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
                     pass
+        ctx.background_tasks.clear()
         if ctx.http_runner is not None:
             await ctx.http_runner.cleanup()
         if ctx.pygame_initialized:
@@ -773,7 +843,8 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
 
         # SSE: 字幕表示 + 口パク用音声URL送信
         audio_id = uuid.uuid4().hex[:12]
-        app_ctx._audio_cache[audio_id] = wav_data
+        app_ctx._audio_cache[audio_id] = (time.time(), wav_data)
+        _cleanup_audio_cache(app_ctx)
         await _broadcast_sse(app_ctx, "subtitle", json.dumps({"text": text}))
         await _broadcast_sse(app_ctx, "speak", json.dumps({"audioUrl": f"/overlay/audio/{audio_id}"}))
 
@@ -853,17 +924,22 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
 
 def _validate_note_key(key: str) -> None:
     """ノートのkeyを検証し、不正なパスを拒否する。"""
-    if ".." in key:
+    key_path = Path(key)
+    if any(part == ".." for part in key_path.parts):
         raise ValueError(f"keyに '..' を含めることはできません: {key}")
-    if key.startswith("/") or key.startswith("\\"):
+    if key_path.is_absolute():
         raise ValueError(f"keyは絶対パスにできません: {key}")
+    if key_path.drive or ":" in key:
+        raise ValueError(f"keyにドライブ指定はできません: {key}")
 
 
 def _resolve_note_path(app_ctx: AppContext, key: str) -> Path:
     _validate_note_key(key)
-    file_path = (app_ctx.memory_dir / f"{key}.md").resolve()
-    # パストラバーサル防止: 解決後のパスが memory_dir 配下であることを確認
-    if not str(file_path).startswith(str(app_ctx.memory_dir.resolve())):
+    memory_root = app_ctx.memory_dir.resolve()
+    file_path = (memory_root / f"{key}.md").resolve()
+    try:
+        file_path.relative_to(memory_root)
+    except ValueError:
         raise ValueError(f"不正なkeyです: {key}")
     return file_path
 
