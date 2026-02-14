@@ -21,9 +21,9 @@ onecomme:
   port: 11180                 # わんコメのデフォルトポート
 
 whisper:
-  model: "large-v3"              # faster-whisper モデル (tiny/base/small/medium/large-v3)
+  model: "large-v3-turbo"              # faster-whisper モデル (tiny/base/small/medium/large-v3)
   language: "ja"
   device: "cuda"
-  compute_type: "auto"
+  compute_type: "float16"
   beam_size: 1
   no_speech_threshold: 0.8
