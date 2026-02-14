@@ -75,16 +75,46 @@ pip install -e .
 
 > **CPU環境の推奨設定**: `model: small`, `device: cpu`, `compute_type: int8`
 
-### 4. サービス起動
+### 4. OBS ブラウザソース (立ち絵オーバーレイ)
+
+1. URL: `http://localhost:50700/overlay/`
+2. 幅・高さを配信解像度に合わせて設定する
+
+## 使用方法
+
+### 1. サーバー起動
+
+配信前に手動でサーバーを起動する。
 
 ```bash
 live-assistant serve
 ```
 
-### 5. OBS ブラウザソース (立ち絵オーバーレイ)
+サーバーは起動すると同時に以下のバックグラウンドタスクを自動開始：
+- マイク音声の録音・VAD・文字起こし
+- わんコメ経由のコメント受信
 
-1. URL: `http://localhost:50700/overlay/`
-2. 幅・高さを配信解像度に合わせて設定する
+### 2. 配信アシスタント開始
+
+Claude Code で `/live-assistant` スキルを実行すると、エージェントが以下を自動実行：
+1. `live-assistant start-stream` — 前回ログ読み込み、トピック初期化
+2. トピック調査エージェント起動（バックグラウンド）
+3. メインループ — `wait` → 応答 → `speak` → ループ
+
+### 3. 配信終了
+
+配信終了後、サーバーを手動で停止する。
+
+```bash
+# Windows の場合
+tasklist | grep python  # プロセスIDを確認
+taskkill //PID <PID> //F
+
+# Linux/Mac の場合
+pkill -f "live-assistant serve"
+```
+
+または、サーバーを起動したターミナルで `Ctrl+C` を押す。
 
 ## 他プロジェクトからの利用
 

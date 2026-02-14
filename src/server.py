@@ -89,6 +89,7 @@ class AppContext:
     pygame_initialized: bool = False
     mic_task: asyncio.Task | None = None
     onecomme_task: asyncio.Task | None = None
+    screenshot_task: asyncio.Task | None = None
     mic_vad_state: str = "IDLE"  # "IDLE" | "SPEAKING" | "TRAILING" | "TRANSCRIBING"
     whisper_model: Any = None
     history: list[dict] = field(default_factory=list)
@@ -298,9 +299,11 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_api_screenshot(request: web.Request) -> web.Response:
-        image_data = _take_screenshot_jpeg(ctx.config)
         screenshot_path = _PROJECT_ROOT / "screenshot.jpg"
-        screenshot_path.write_bytes(image_data)
+        if not screenshot_path.exists():
+            # 自動キャプチャがまだ走っていない場合はその場で取得
+            image_data = _take_screenshot_jpeg(ctx.config)
+            screenshot_path.write_bytes(image_data)
         return web.json_response({"path": str(screenshot_path)})
 
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
@@ -718,10 +721,14 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
         ctx.onecomme_task = asyncio.create_task(_onecomme_loop(ctx))
         logger.info("わんコメ接続タスク起動")
 
+    # 自動スクリーンショットタスク起動
+    ctx.screenshot_task = asyncio.create_task(_screenshot_loop(ctx))
+    logger.info("自動スクリーンショットタスク起動")
+
     try:
         yield ctx
     finally:
-        for task in (ctx.mic_task, ctx.onecomme_task, *list(ctx.background_tasks)):
+        for task in (ctx.mic_task, ctx.onecomme_task, ctx.screenshot_task, *list(ctx.background_tasks)):
             if task is not None:
                 task.cancel()
                 try:
@@ -890,6 +897,22 @@ def _take_screenshot_jpeg(config: dict | None = None) -> bytes:
     if img_data.startswith("data:"):
         img_data = img_data.split(",", 1)[1]
     return base64.b64decode(img_data)
+
+
+async def _screenshot_loop(ctx: AppContext) -> None:
+    """定期的にOBSからスクリーンショットを取得してファイルに保存する。"""
+    interval = ctx.config.get("obs", {}).get("screenshot_interval_sec", 2)
+    screenshot_path = _PROJECT_ROOT / "screenshot.jpg"
+    logger.info("自動スクリーンショット開始 (間隔: %s秒)", interval)
+    while True:
+        try:
+            image_data = await asyncio.get_event_loop().run_in_executor(
+                None, _take_screenshot_jpeg, ctx.config,
+            )
+            screenshot_path.write_bytes(image_data)
+        except Exception as e:
+            logger.debug("自動スクリーンショット失敗: %s", e)
+        await asyncio.sleep(interval)
 
 
 def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:

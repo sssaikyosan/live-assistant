@@ -14,6 +14,7 @@ obs:
   host: "127.0.0.1"
   port: 4455                  # OBS WebSocket デフォルトポート
   password: ""                # OBS WebSocket パスワード（空なら認証なし）
+  screenshot_interval_sec: 2  # 自動スクリーンショット間隔（秒）
 
 onecomme:
   enabled: true               # trueにするとわんコメからコメント受信開始

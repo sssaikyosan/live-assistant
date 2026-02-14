@@ -5,6 +5,14 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 
 # Live Assistant Skill
 
+## Model Strategy
+
+- **メインエージェント**: Sonnet（拡張思考なし）— 応答速度を最優先。wait → speak のループを高速に回す。
+- **サブエージェント**: Opus（拡張思考あり）— 重い処理を委任。Task ツールで `model: "opus"` を指定して起動する。
+
+メインが担当する処理: `wait`, `speak`, `screenshot`（取得のみ）
+サブエージェントに委任する処理: トピック調査、画面分析・実況、オーバーレイ表示、ノート保存
+
 ## Start Service
 
 1. 起動済みでない場合はサービスを起動する。
@@ -36,6 +44,22 @@ live-assistant start-stream
 - 調べ物前: `speak "ちょっと調べてくるのだ！"` → Web検索/サブエージェント
 - 画像探し前: `speak "画像を探してくるのだ！"` → 画像検索
 
+## Sub-Agent Delegation
+
+重い処理はバックグラウンドのサブエージェント（Opus）に委任する。
+
+### トピック調査エージェント
+配信開始時にバックグラウンドで起動。ニュース・ゲーム情報・雑談ネタを調査して `topics` ノートに保存する。トピックにはソースURLを含める。
+
+### 画面分析エージェント
+`screenshot` で取得した画像をサブエージェントに渡して分析・実況テキスト生成を依頼。結果を受け取ってメインが `speak` する。
+
+### オーバーレイエージェント
+オーバーレイ表示が必要な場面（グラフ、画像、エフェクトなど）をサブエージェントに委任。サブエージェントが直接 `overlay-html` コマンドを実行する。画像表示が必要な場合はソースページから画像URLを取得し、`<img>` タグとして表示する。
+
+### ノート管理エージェント
+配信ログの更新やトピック管理をサブエージェントに委任。サブエージェントが直接 `save-note` コマンドを実行する。
+
 ## Priority Rules
 
 1. `source: "mic"` を最優先で処理する。
@@ -55,6 +79,23 @@ live-assistant screenshot
 ```
 
 3. 直近話題の発展、調査結果共有、雑談の順で話題を作る。
+
+## Overlay Operations
+
+配信画面にHTML/画像/グラフなどを自由に表示できる。サブエージェントに委任して実行する。
+
+```bash
+# HTML表示（画面中央にデフォルト配置）
+live-assistant overlay-html '<div style="...">内容</div>'
+
+# CSS追加
+live-assistant overlay-html '<div>内容</div>' --css 'div { color: red; }'
+
+# クリア
+live-assistant overlay-html ""
+```
+
+画像表示もHTML内の`<img>`タグで行う。複数画像の同時表示、SVGグラフ、任意のHTMLコンテンツが可能。
 
 ## Note Operations
 
@@ -84,14 +125,6 @@ live-assistant load-note topics
 live-assistant load-note context
 live-assistant save-note context "マージ済みの全文"
 ```
-
-## Topic Research Sub-Agent
-
-トピック調査サブエージェント起動時、以下の指示を prompt に含めること。
-
-```
-
-トピックにはソースURLを含める。画像表示が必要な場合はメインエージェントがソースページから画像URLを取得し、`overlay-html` で `<img>` タグとして表示する。
 
 ## Safety
 
