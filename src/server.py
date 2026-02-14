@@ -212,8 +212,17 @@ def _create_http_app(ctx: AppContext) -> web.Application:
                 {"error": "text は必須です"},
                 status=400,
             )
-        result = await _speak_impl(ctx, text)
-        return web.json_response({"result": result})
+        sync = payload.get("sync", False)
+        if sync:
+            result = await _speak_impl(ctx, text)
+            return web.json_response({"result": result})
+        else:
+            if ctx._speak_lock.locked():
+                return web.json_response(
+                    {"result": "BUSY: 前の発話が再生中です", "busy": True}
+                )
+            asyncio.create_task(_speak_impl(ctx, text))
+            return web.json_response({"result": f"発話キュー投入: {text}"})
 
     async def handle_api_status(request: web.Request) -> web.Response:
         return web.json_response(_get_stream_status_impl(ctx))

@@ -113,11 +113,14 @@ def _cmd_wait(args: argparse.Namespace) -> int:
 
 
 def _cmd_speak(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {"text": args.text}
+    if args.sync:
+        body["sync"] = True
     resp = _request(
         args.base_url,
         "POST",
         "/api/speak",
-        json_body={"text": args.text},
+        json_body=body,
     )
     data = resp.json()
     print(data.get("result", ""))
@@ -203,6 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     speak = subparsers.add_parser("speak", help="VOICEVOXで読み上げ")
     speak.add_argument("text")
+    speak.add_argument("--sync", action="store_true", help="再生完了まで待つ")
     speak.set_defaults(func=_cmd_speak)
 
     status = subparsers.add_parser("status", help="配信状態を表示")
