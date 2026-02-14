@@ -360,7 +360,7 @@ async def _enqueue_comment(ctx: AppContext, text: str, source_label: str = "comm
         "text": text,
         "time": time.time(),
         "number": ctx.total_comments,
-        "source": source_label,
+        "source": "comment",
     })
 
 
