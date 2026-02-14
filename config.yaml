@@ -5,7 +5,7 @@ voicevox:
 
 vad:
   speech_threshold: 0.5     # VAD確率の閾値
-  silence_duration: 1.5     # 沈黙1.5秒で発話終了
+  silence_duration: 1.0     # 沈黙1.0秒で発話終了
   min_speech_sec: 0.0       # 最短発話長（未満はスキップ）
   max_speech_sec: 30        # 最大バッファ（超過で強制転写）
   pre_buffer_sec: 0.5       # プリバッファ秒数（発話冒頭の切れ防止）
