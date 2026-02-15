@@ -185,27 +185,20 @@ def _cmd_activity(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_generate_image(args: argparse.Namespace) -> int:
-    workflow_path = Path(args.workflow)
-    if not workflow_path.is_file():
-        print(f"ワークフローファイルが見つかりません: {args.workflow}", file=sys.stderr)
-        return 1
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+def _cmd_comfyui(args: argparse.Namespace) -> int:
     try:
-        resp = _request(
-            args.base_url,
-            "POST",
-            "/api/generate_image",
-            json_body={"workflow": workflow},
-            timeout=120.0,
-        )
-        _print_json(resp.json())
-    finally:
-        # 使用後にワークフローファイルを自動削除
-        try:
-            workflow_path.unlink()
-        except OSError:
-            pass
+        workflow = json.loads(args.workflow)
+    except json.JSONDecodeError:
+        print(f"不正なJSON文字列です: {args.workflow}", file=sys.stderr)
+        return 1
+    resp = _request(
+        args.base_url,
+        "POST",
+        "/api/comfyui",
+        json_body={"workflow": workflow},
+        timeout=120.0,
+    )
+    _print_json(resp.json())
     return 0
 
 
@@ -263,9 +256,9 @@ def _build_parser() -> argparse.ArgumentParser:
     activity.add_argument("text", help="稼働状況テキスト (空文字でクリア)")
     activity.set_defaults(func=_cmd_activity)
 
-    gen_image = subparsers.add_parser("generate-image", help="ComfyUIで画像生成")
-    gen_image.add_argument("workflow", help="ComfyUI ワークフローJSONファイルのパス")
-    gen_image.set_defaults(func=_cmd_generate_image)
+    comfyui = subparsers.add_parser("comfyui", help="ComfyUIワークフロー実行")
+    comfyui.add_argument("workflow", help="ワークフローJSON文字列")
+    comfyui.set_defaults(func=_cmd_comfyui)
 
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")

@@ -303,7 +303,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         except ValueError as e:
             return web.json_response({"error": str(e)}, status=400)
 
-    async def handle_api_generate_image(request: web.Request) -> web.Response:
+    async def handle_api_comfyui(request: web.Request) -> web.Response:
         payload = await _read_json_body(request)
         workflow = payload.get("workflow")
         if not workflow or not isinstance(workflow, dict):
@@ -311,10 +311,10 @@ def _create_http_app(ctx: AppContext) -> web.Application:
                 {"error": "workflow (ComfyUI ワークフローJSON) は必須です"}, status=400,
             )
         try:
-            result = await _generate_image_impl(ctx, workflow)
+            result = await _comfyui_impl(ctx, workflow)
             return web.json_response(result)
         except Exception as e:
-            logger.exception("[comfyui] 画像生成エラー")
+            logger.exception("[comfyui] ワークフロー実行エラー")
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
@@ -359,7 +359,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/activity", handle_api_activity)
-    app.router.add_post("/api/generate_image", handle_api_generate_image)
+    app.router.add_post("/api/comfyui", handle_api_comfyui)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
@@ -1055,15 +1055,15 @@ def _load_note_impl(app_ctx: AppContext, key: str) -> str:
     return content
 
 
-async def _generate_image_impl(
+async def _comfyui_impl(
     app_ctx: AppContext,
     workflow: dict[str, Any],
 ) -> dict[str, Any]:
-    """ComfyUI APIにワークフローJSONを送信して画像を生成し、ファイルパスを返す。"""
+    """ComfyUI APIにワークフローJSONを送信してワークフローを実行し、結果を返す。"""
     comfyui_config = app_ctx.config.get("comfyui", {})
     base_url = comfyui_config.get("url", "http://127.0.0.1:8188").rstrip("/")
 
-    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "画像生成中"}))
+    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "ワークフロー実行中"}))
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(f"{base_url}/prompt", json={"prompt": workflow})
@@ -1085,24 +1085,19 @@ async def _generate_image_impl(
                         img_info = images[0]
                         filename = img_info["filename"]
                         subfolder = img_info.get("subfolder", "")
-                        params = {"filename": filename}
+                        view_params = f"filename={filename}"
                         if subfolder:
-                            params["subfolder"] = subfolder
-                        img_resp = await client.get(f"{base_url}/view", params=params)
-                        img_resp.raise_for_status()
-                        gen_dir = _PROJECT_ROOT / "generated"
-                        gen_dir.mkdir(exist_ok=True)
-                        save_path = gen_dir / filename
-                        save_path.write_bytes(img_resp.content)
+                            view_params += f"&subfolder={subfolder}"
+                        url = f"{base_url}/view?{view_params}"
                         await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
-                        logger.info("[comfyui] 画像生成完了: %s", save_path)
+                        logger.info("[comfyui] ワークフロー完了: %s", url)
                         return {
-                            "path": str(save_path),
                             "filename": filename,
+                            "url": url,
                         }
                 break
 
     await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
-    return {"error": "画像生成がタイムアウトしました"}
+    return {"error": "ワークフロー実行がタイムアウトしました"}
 
 
