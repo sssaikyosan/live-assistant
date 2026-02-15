@@ -19,4 +19,4 @@ CLAUDE.md
 assets/*.psd
 nul
 screenshot.jpg
-dynamic-state.json
+overlay/slots/
