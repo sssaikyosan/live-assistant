@@ -137,6 +137,18 @@
   <div id="status">Loading...</div>
 
   <script>
+    // innerHTML で挿入された script タグを実行する
+    function _execScripts(container) {
+      container.querySelectorAll('script').forEach(oldScript => {
+        const newScript = document.createElement('script');
+        for (const attr of oldScript.attributes) {
+          newScript.setAttribute(attr.name, attr.value);
+        }
+        newScript.textContent = oldScript.textContent;
+        oldScript.parentNode.replaceChild(newScript, oldScript);
+      });
+    }
+
     const subtitleEl = document.getElementById('subtitle');
     const textEl = document.getElementById('text');
     const statusEl = document.getElementById('status');
@@ -268,15 +280,7 @@
         const container = document.getElementById('dynamic-content');
         if (data.html !== undefined) {
           container.innerHTML = data.html;
-          // innerHTML ではscriptタグが実行されないため、明示的に再挿入する
-          container.querySelectorAll('script').forEach(oldScript => {
-            const newScript = document.createElement('script');
-            for (const attr of oldScript.attributes) {
-              newScript.setAttribute(attr.name, attr.value);
-            }
-            newScript.textContent = oldScript.textContent;
-            oldScript.parentNode.replaceChild(newScript, oldScript);
-          });
+          _execScripts(container);
         }
         if (data.css) {
           let styleEl = document.getElementById('dynamic-style');
@@ -287,6 +291,46 @@
           }
           styleEl.textContent = data.css;
         }
+      });
+
+      es.addEventListener('slot-update', (e) => {
+        const data = JSON.parse(e.data);
+        const slotName = data.slot;
+        if (!slotName) return;
+        const container = document.getElementById('dynamic-content');
+        const slotId = 'slot-' + slotName;
+        let slotEl = document.getElementById(slotId);
+        if (!slotEl) {
+          slotEl = document.createElement('div');
+          slotEl.id = slotId;
+          slotEl.className = 'overlay-slot';
+          container.appendChild(slotEl);
+        }
+        slotEl.innerHTML = data.html || '';
+        _execScripts(slotEl);
+        // スロット固有CSS
+        const styleId = 'slot-style-' + slotName;
+        let styleEl = document.getElementById(styleId);
+        if (data.css) {
+          if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            document.head.appendChild(styleEl);
+          }
+          styleEl.textContent = data.css;
+        } else if (styleEl) {
+          styleEl.remove();
+        }
+      });
+
+      es.addEventListener('slot-remove', (e) => {
+        const data = JSON.parse(e.data);
+        const slotName = data.slot;
+        if (!slotName) return;
+        const slotEl = document.getElementById('slot-' + slotName);
+        if (slotEl) slotEl.remove();
+        const styleEl = document.getElementById('slot-style-' + slotName);
+        if (styleEl) styleEl.remove();
       });
 
       es.onerror = () => {
@@ -300,36 +344,42 @@
       };
     }
 
-    // --- 保存済み動的コンテンツの復元 ---
+    // --- 保存済みスロットの復元 ---
     async function restoreDynamicContent() {
+      // スロットディレクトリからファイル一覧を取得して復元する
+      // 既知のスロット名をサーバー API で取得する方法がないため、
+      // slots/ ディレクトリの各ファイルを直接取得する
       try {
-        const resp = await fetch('/overlay/dynamic-state.json?' + Date.now());
+        const resp = await fetch('/api/overlay/slots?' + Date.now());
         if (resp.ok) {
-          const data = await resp.json();
+          const slots = await resp.json();
           const container = document.getElementById('dynamic-content');
-          if (data.html) {
-            container.innerHTML = data.html;
-            container.querySelectorAll('script').forEach(oldScript => {
-              const newScript = document.createElement('script');
-              for (const attr of oldScript.attributes) {
-                newScript.setAttribute(attr.name, attr.value);
-              }
-              newScript.textContent = oldScript.textContent;
-              oldScript.parentNode.replaceChild(newScript, oldScript);
-            });
-          }
-          if (data.css) {
-            let styleEl = document.getElementById('dynamic-style');
-            if (!styleEl) {
-              styleEl = document.createElement('style');
-              styleEl.id = 'dynamic-style';
-              document.head.appendChild(styleEl);
+          for (const entry of slots) {
+            const slotName = entry.slot;
+            const slotId = 'slot-' + slotName;
+            let slotEl = document.getElementById(slotId);
+            if (!slotEl) {
+              slotEl = document.createElement('div');
+              slotEl.id = slotId;
+              slotEl.className = 'overlay-slot';
+              container.appendChild(slotEl);
             }
-            styleEl.textContent = data.css;
+            slotEl.innerHTML = entry.html || '';
+            _execScripts(slotEl);
+            if (entry.css) {
+              const styleId = 'slot-style-' + slotName;
+              let styleEl = document.getElementById(styleId);
+              if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = styleId;
+                document.head.appendChild(styleEl);
+              }
+              styleEl.textContent = entry.css;
+            }
           }
         }
       } catch (e) {
-        console.log('No saved dynamic content to restore');
+        console.log('No saved slots to restore');
       }
     }
 

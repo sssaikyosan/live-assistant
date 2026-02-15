@@ -41,21 +41,25 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 
 - Web検索で最新ニュースや話題を調べて紹介する
 - Read ツールで `screenshot.jpg` を読んで実況する（サーバーが2秒ごとにプロジェクトルート直下に自動保存）
-- `overlay/dynamic-state.json` に JSON (`{"html": "...", "css": "..."}`) を書き込んで配信画面にHTML/画像/SVGグラフなどを表示する（ファイル監視で自動反映）
+- `overlay/slots/<name>.json` に JSON (`{"html": "...", "css": "..."}`) を書き込んで配信画面にHTML/画像/SVGグラフなどを表示する（スロット単位で独立管理、ファイル監視で自動反映）
 - ComfyUI API (`curl` で `http://127.0.0.1:8000/prompt` にPOST) で画像や音楽を生成する
 - 直近の話題を発展させる、雑談する
 
 各CLIコマンドの使い方は `live-assistant <command> --help` で確認できる。
 
-### オーバーレイの使い方
+### オーバーレイの使い方（スロット方式）
 
-`overlay/dynamic-state.json` に Write ツールで JSON を書き込む。サーバーがファイル変更を検知して配信画面に自動反映する。
+`overlay/slots/<name>.json` に Write ツールで JSON を書き込む。スロット名ごとに独立管理され、1つのスロットを変更しても他のスロットに影響しない。
 
 ```json
 {"html": "<div style='color:white'>内容</div>", "css": ""}
 ```
 
-画像は `<img>` タグ、グラフはSVGで表示。クリアするには `{"html": "", "css": ""}` を書き込む。
+- BGM用: `overlay/slots/bgm.json`
+- エフェクト用: `overlay/slots/effects.json`
+- ニュース用: `overlay/slots/news.json`
+
+画像は `<img>` タグ、グラフはSVGで表示。スロットを削除するにはファイルを削除する（Bashで `rm`）。
 
 ## Safety
 

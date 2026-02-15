@@ -140,7 +140,7 @@ copy .claude\skills\live-assistant\SKILL.md %USERPROFILE%\.claude\skills\live-as
 | `live-assistant status` | 稼働状態確認 |
 | `live-assistant activity "..."` | 稼働状況をオーバーレイに表示 |
 
-オーバーレイへのHTML表示は `overlay/dynamic-state.json` にJSONを書き込むことで行う（サーバーがファイル変更を自動検知して配信画面に反映）。
+オーバーレイへのHTML表示は `overlay/slots/<name>.json` にJSONを書き込むことで行う（スロット単位で独立管理、サーバーがファイル変更を自動検知して配信画面に反映）。
 
 ## 外部サービス・素材の利用について
 

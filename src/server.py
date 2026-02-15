@@ -278,6 +278,25 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/speak", handle_api_speak)
     app.router.add_get("/api/status", handle_api_status)
     app.router.add_post("/api/activity", handle_api_activity)
+    async def handle_api_overlay_slots(request: web.Request) -> web.Response:
+        """全スロットの現在の状態を返す (ページ復元用)。"""
+        slots_dir = _PROJECT_ROOT / "overlay" / "slots"
+        result: list[dict[str, Any]] = []
+        if slots_dir.is_dir():
+            for f in sorted(slots_dir.glob("*.json")):
+                try:
+                    raw = f.read_text(encoding="utf-8")
+                    data = json.loads(raw)
+                    entry: dict[str, Any] = {"slot": f.stem, "html": data.get("html", "")}
+                    css = data.get("css", "")
+                    if css:
+                        entry["css"] = css
+                    result.append(entry)
+                except Exception:
+                    pass
+        return web.json_response(result)
+
+    app.router.add_get("/api/overlay/slots", handle_api_overlay_slots)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
     app.router.add_get("/overlay/audio/{audio_id}", handle_overlay_audio)
@@ -883,34 +902,55 @@ async def _screenshot_loop(ctx: AppContext) -> None:
 
 
 async def _overlay_file_watcher(ctx: AppContext) -> None:
-    """dynamic-state.json のファイル変更を監視し、変更があればSSEでブロードキャストする。"""
-    state_path = _PROJECT_ROOT / "overlay" / "dynamic-state.json"
-    last_mtime: float = 0.0
-    if state_path.is_file():
-        last_mtime = state_path.stat().st_mtime
-    logger.info("オーバーレイファイル監視開始: %s", state_path)
+    """overlay/slots/ ディレクトリを監視し、スロット単位でSSEブロードキャストする。
+
+    各スロットは overlay/slots/<name>.json ファイルで管理される。
+    ファイル追加・変更 → slot-update イベント
+    ファイル削除 → slot-remove イベント
+    """
+    slots_dir = _PROJECT_ROOT / "overlay" / "slots"
+    slots_dir.mkdir(parents=True, exist_ok=True)
+
+    # 既存ファイルの mtime を記録
+    known_slots: dict[str, float] = {}
+    for f in slots_dir.glob("*.json"):
+        known_slots[f.stem] = f.stat().st_mtime
+
+    logger.info("オーバーレイスロット監視開始: %s (%d スロット)", slots_dir, len(known_slots))
+
     while True:
         await asyncio.sleep(0.5)
         try:
-            if not state_path.is_file():
-                continue
-            mtime = state_path.stat().st_mtime
-            if mtime <= last_mtime:
-                continue
-            last_mtime = mtime
-            raw = state_path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-            sse_data: dict[str, Any] = {}
-            html = data.get("html", "")
-            css = data.get("css", "")
-            if html is not None:
-                sse_data["html"] = html
-            if css:
-                sse_data["css"] = css
-            await _broadcast_sse(ctx, "html", json.dumps(sse_data))
-            logger.debug("オーバーレイファイル変更検知、SSEブロードキャスト")
+            current_files: dict[str, Path] = {}
+            for f in slots_dir.glob("*.json"):
+                current_files[f.stem] = f
+
+            # 削除されたスロットを検出
+            removed = set(known_slots.keys()) - set(current_files.keys())
+            for slot_name in removed:
+                del known_slots[slot_name]
+                await _broadcast_sse(ctx, "slot-remove", json.dumps({"slot": slot_name}))
+                logger.info("スロット削除検知: %s", slot_name)
+
+            # 追加・変更されたスロットを検出
+            for slot_name, file_path in current_files.items():
+                mtime = file_path.stat().st_mtime
+                if slot_name not in known_slots or mtime > known_slots[slot_name]:
+                    known_slots[slot_name] = mtime
+                    try:
+                        raw = file_path.read_text(encoding="utf-8")
+                        data = json.loads(raw)
+                        sse_data: dict[str, Any] = {"slot": slot_name}
+                        sse_data["html"] = data.get("html", "")
+                        css = data.get("css", "")
+                        if css:
+                            sse_data["css"] = css
+                        await _broadcast_sse(ctx, "slot-update", json.dumps(sse_data))
+                        logger.debug("スロット更新検知: %s", slot_name)
+                    except Exception as e:
+                        logger.debug("スロットファイル読み込みエラー (%s): %s", slot_name, e)
         except Exception as e:
-            logger.debug("オーバーレイファイル監視エラー: %s", e)
+            logger.debug("オーバーレイスロット監視エラー: %s", e)
 
 
 def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
