@@ -5,7 +5,7 @@ voicevox:
   speed_scale: 1.2            # 読み上げ速度 (1.0がデフォルト)
 
 vad:
-  speech_threshold: 0.5     # VAD確率の閾値
+  speech_threshold: 0.3     # VAD確率の閾値
   silence_duration: 1.0     # 沈黙1.0秒で発話終了
   min_speech_sec: 0.0       # 最短発話長（未満はスキップ）
   max_speech_sec: 30        # 最大バッファ（超過で強制転写）

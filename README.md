@@ -97,9 +97,8 @@ live-assistant serve
 ### 2. 配信アシスタント開始
 
 サーバーが起動した状態で、Claude Code で `/live-assistant` スキルを実行する。エージェントが以下を自動実行：
-1. `live-assistant start-stream` — 前回ログ読み込み、トピック初期化
-2. トピック調査エージェント起動（バックグラウンド）
-3. メインループ — `wait` → 応答 → `speak` → ループ
+1. `live-assistant status` でサーバー起動を確認
+2. メインループ — `wait` → 応答 → `speak` → ループ
 
 ### 3. 配信終了
 
@@ -136,14 +135,12 @@ copy .claude\skills\live-assistant\SKILL.md %USERPROFILE%\.claude\skills\live-as
 | コマンド | 説明 |
 |--------|------|
 | `live-assistant serve` | サービス起動 |
-| `live-assistant start-stream` | 前回ログ読み込み + `topics` リセット |
 | `live-assistant wait --timeout-sec 15` | コメント/マイクイベント待機 |
 | `live-assistant speak "..."` | VOICEVOX 読み上げ |
 | `live-assistant status` | 稼働状態確認 |
-| `live-assistant screenshot` | OBS 経由画面キャプチャ（絶対パスを出力） |
-| `live-assistant save-note <key> <content>` | `memory/{key}.md` 保存 |
-| `live-assistant load-note <key>` | `memory/{key}.md` 読み込み |
-| `live-assistant overlay-html <html>` | オーバーレイにHTML/画像/グラフ表示（空文字でクリア） |
+| `live-assistant activity "..."` | 稼働状況をオーバーレイに表示 |
+
+オーバーレイへのHTML表示は `overlay/dynamic-state.json` にJSONを書き込むことで行う（サーバーがファイル変更を自動検知して配信画面に反映）。
 
 ## 外部サービス・素材の利用について
 

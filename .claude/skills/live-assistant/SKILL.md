@@ -1,17 +1,13 @@
 ---
 name: live-assistant
-description: ライブ配信アシスタントを `live-assistant` CLI で運用するための手順。わんコメ経由コメント受信、マイク文字起こし、VOICEVOX読み上げ、OBS配信画面取得を行う。
+description: ライブ配信アシスタントを `live-assistant` CLI で運用するための手順。わんコメ経由コメント受信、マイク文字起こし、VOICEVOX読み上げ、OBS配信画面取得、配信画面へのHTML要素オーバーレイを行う。
 ---
 
 # Live Assistant Skill
 
-## Start Stream
+## Prerequisites
 
-サーバー (`live-assistant serve`) は事前に手動で起動されている前提。配信開始時に以下を実行する。出力に `screenshot_path` が含まれるので保持する。
-
-```bash
-live-assistant start-stream
-```
+サーバー (`live-assistant serve`) は事前に手動で起動されている前提。`live-assistant status` でサーバーが起動していることを確認してからループに入る。
 
 ## Main Loop
 
@@ -26,7 +22,7 @@ live-assistant start-stream
 時間のかかる操作（Web検索など）を行う前に、`speak` で一言伝えてから実行する。BLOCKED/BUSY が返った場合は speak を諦めてそのまま操作に進む（wait に戻らない）。
 
 例:
-- スクショ前: `speak "画面を見てみるのだ！"` → Read ツールで `screenshot_path`
+- スクショ前: `speak "画面を見てみるのだ！"` → Read ツールで `screenshot.jpg`
 - 調べ物前: `speak "ちょっと調べてくるのだ！"` → Web検索
 - 画像生成前: `speak "画像を作ってみるのだ！"` → 画像生成
 
@@ -41,32 +37,25 @@ live-assistant start-stream
 
 沈黙が15秒以上続いたら自律行動を行う。自律発言後は15秒間待つ。一度話した話題は繰り返さない。
 
-### 自律行動の優先順位
+### 自律行動の例（自由に選んでよい）
 
-1. Web検索で最新ニュースや話題を調べて紹介する
-2. Read ツールで `screenshot_path` を読んで実況する（サーバーが定期的に自動保存している）
-3. 直近話題の発展、雑談の順で話題を作る
+- Web検索で最新ニュースや話題を調べて紹介する
+- Read ツールで `screenshot.jpg` を読んで実況する（サーバーが2秒ごとにプロジェクトルート直下に自動保存）
+- `overlay/dynamic-state.json` に JSON (`{"html": "...", "css": "..."}`) を書き込んで配信画面にHTML/画像/SVGグラフなどを表示する（ファイル監視で自動反映）
+- ComfyUI API (`curl` で `http://127.0.0.1:8000/prompt` にPOST) で画像や音楽を生成する
+- 直近の話題を発展させる、雑談する
 
-## Overlay Operations
+各CLIコマンドの使い方は `live-assistant <command> --help` で確認できる。
 
-配信画面にHTML/画像/グラフなどを自由に表示できる。
+### オーバーレイの使い方
 
-```bash
-# HTML表示（画面中央にデフォルト配置）
-live-assistant overlay-html '<div style="...">内容</div>'
+`overlay/dynamic-state.json` に Write ツールで JSON を書き込む。サーバーがファイル変更を検知して配信画面に自動反映する。
 
-# CSS追加
-live-assistant overlay-html '<div>内容</div>' --css 'div { color: red; }'
-
-# クリア
-live-assistant overlay-html ""
+```json
+{"html": "<div style='color:white'>内容</div>", "css": ""}
 ```
 
-画像表示もHTML内の`<img>`タグで行う。複数画像の同時表示、SVGグラフ、任意のHTMLコンテンツが可能。
-
-## ComfyUI
-
-ComfyUI APIは `curl` で直接 `http://127.0.0.1:8000/prompt` にPOSTして利用する。CLIコマンドは廃止済み。
+画像は `<img>` タグ、グラフはSVGで表示。クリアするには `{"html": "", "css": ""}` を書き込む。
 
 ## Safety
 

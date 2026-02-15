@@ -35,18 +35,6 @@ def _request(
     resp.raise_for_status()
     return resp
 
-
-def _is_service_running(base_url: str) -> bool:
-    """サービスが起動しているか確認する。"""
-    try:
-        with httpx.Client(timeout=2) as client:
-            resp = client.get(f"{base_url.rstrip('/')}/healthz")
-            return resp.status_code == 200
-    except Exception:
-        return False
-
-
-
 def _cmd_serve(_args: argparse.Namespace) -> int:
     from .server import app_lifespan
 
@@ -99,20 +87,6 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_start_stream(args: argparse.Namespace) -> int:
-    # サービスが起動済みか確認（自動起動はしない）
-    if not _is_service_running(args.base_url):
-        print("サービスが起動していません。先に 'live-assistant serve' を実行してください。", file=sys.stderr)
-        return 1
-    resp = _request(args.base_url, "POST", "/api/start_stream", json_body={})
-    data = resp.json()
-    screenshot_path = data.get("screenshot_path")
-    if screenshot_path:
-        print(f"screenshot_path: {screenshot_path}")
-    return 0
-
-
-
 
 def _cmd_activity(args: argparse.Namespace) -> int:
     resp = _request(
@@ -123,18 +97,6 @@ def _cmd_activity(args: argparse.Namespace) -> int:
     )
     print(resp.json().get("result", ""))
     return 0
-
-
-def _cmd_overlay_html(args: argparse.Namespace) -> int:
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/overlay/html",
-        json_body={"html": args.html, "css": args.css or ""},
-    )
-    print(resp.json().get("result", ""))
-    return 0
-
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -163,17 +125,9 @@ def _build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status", help="配信状態を表示")
     status.set_defaults(func=_cmd_status)
 
-    start_stream = subparsers.add_parser("start-stream", help="配信開始初期化")
-    start_stream.set_defaults(func=_cmd_start_stream)
-
     activity = subparsers.add_parser("activity", help="稼働状況をオーバーレイに表示")
     activity.add_argument("text", help="稼働状況テキスト (空文字でクリア)")
     activity.set_defaults(func=_cmd_activity)
-
-    overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
-    overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")
-    overlay_html.add_argument("--css", default="", help="追加CSSスタイル")
-    overlay_html.set_defaults(func=_cmd_overlay_html)
 
     return parser
 

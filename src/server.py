@@ -50,24 +50,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _load_dotenv() -> None:
-    """プロジェクトルートの .env ファイルを環境変数に読み込む。"""
-    env_path = _PROJECT_ROOT / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            os.environ.setdefault(key, value)
-
-
 def _load_config() -> dict:
-    _load_dotenv()
     config_path = _PROJECT_ROOT / "config.yaml"
     if config_path.exists():
         with open(config_path, encoding="utf-8") as f:
@@ -270,29 +253,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     async def handle_api_status(request: web.Request) -> web.Response:
         return web.json_response(_get_stream_status_impl(ctx))
 
-    async def handle_api_start_stream(request: web.Request) -> web.Response:
-        _start_stream_impl(ctx)
-        return web.json_response({
-            "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
-        })
-
-    async def handle_api_overlay_html(request: web.Request) -> web.Response:
-        """オーバーレイに動的HTMLを注入する。ファイルにも保存して永続化。"""
-        payload = await _read_json_body(request)
-        html_content = payload.get("html", "")
-        css_content = payload.get("css", "")
-        sse_data: dict[str, Any] = {}
-        if html_content is not None:
-            sse_data["html"] = html_content
-        if css_content:
-            sse_data["css"] = css_content
-        # ファイルに保存して永続化（ページリロードでも復元可能）
-        saved = {"html": html_content or "", "css": css_content or ""}
-        saved_path = _overlay_dir / "dynamic-state.json"
-        saved_path.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
-        await _broadcast_sse(ctx, "html", json.dumps(sse_data))
-        return web.json_response({"result": "ok"})
-
     async def handle_api_activity(request: web.Request) -> web.Response:
         """稼働状況テキストをオーバーレイに表示する。"""
         payload = await _read_json_body(request)
@@ -317,9 +277,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/wait", handle_api_wait)
     app.router.add_post("/api/speak", handle_api_speak)
     app.router.add_get("/api/status", handle_api_status)
-    app.router.add_post("/api/start_stream", handle_api_start_stream)
     app.router.add_post("/api/activity", handle_api_activity)
-    app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
     app.router.add_get("/overlay/audio/{audio_id}", handle_overlay_audio)
@@ -508,7 +466,7 @@ async def _continuous_mic_loop(ctx: AppContext) -> None:
 
     vad_config = ctx.config.get("vad", {})
     speech_threshold = vad_config.get("speech_threshold", 0.5)
-    silence_duration = vad_config.get("silence_duration", 2.0)
+    silence_duration = vad_config.get("silence_duration", 1.0)
     max_speech_sec = vad_config.get("max_speech_sec", 30)
     try:
         audio_queue_max_frames = max(1, int(vad_config.get("audio_queue_max_frames", 512)))
@@ -708,10 +666,14 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
     ctx.screenshot_task = asyncio.create_task(_screenshot_loop(ctx))
     logger.info("自動スクリーンショットタスク起動")
 
+    # オーバーレイファイル監視タスク起動
+    overlay_watcher_task = asyncio.create_task(_overlay_file_watcher(ctx))
+    logger.info("オーバーレイファイル監視タスク起動")
+
     try:
         yield ctx
     finally:
-        for task in (ctx.mic_task, ctx.onecomme_task, ctx.screenshot_task, *list(ctx.background_tasks)):
+        for task in (ctx.mic_task, ctx.onecomme_task, ctx.screenshot_task, overlay_watcher_task, *list(ctx.background_tasks)):
             if task is not None:
                 task.cancel()
                 try:
@@ -920,6 +882,37 @@ async def _screenshot_loop(ctx: AppContext) -> None:
         await asyncio.sleep(interval)
 
 
+async def _overlay_file_watcher(ctx: AppContext) -> None:
+    """dynamic-state.json のファイル変更を監視し、変更があればSSEでブロードキャストする。"""
+    state_path = _PROJECT_ROOT / "overlay" / "dynamic-state.json"
+    last_mtime: float = 0.0
+    if state_path.is_file():
+        last_mtime = state_path.stat().st_mtime
+    logger.info("オーバーレイファイル監視開始: %s", state_path)
+    while True:
+        await asyncio.sleep(0.5)
+        try:
+            if not state_path.is_file():
+                continue
+            mtime = state_path.stat().st_mtime
+            if mtime <= last_mtime:
+                continue
+            last_mtime = mtime
+            raw = state_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            sse_data: dict[str, Any] = {}
+            html = data.get("html", "")
+            css = data.get("css", "")
+            if html is not None:
+                sse_data["html"] = html
+            if css:
+                sse_data["css"] = css
+            await _broadcast_sse(ctx, "html", json.dumps(sse_data))
+            logger.debug("オーバーレイファイル変更検知、SSEブロードキャスト")
+        except Exception as e:
+            logger.debug("オーバーレイファイル監視エラー: %s", e)
+
+
 def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
     """配信の現在の状態を返す。"""
     now = time.time()
@@ -939,7 +932,6 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
             mic_status = "running"
 
     return {
-        "total_comments": app_ctx.total_comments,
         "seconds_since_last_comment": (
             round(elapsed_since_last, 1) if elapsed_since_last is not None else None
         ),
@@ -951,9 +943,6 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
     }
 
 
-def _start_stream_impl(app_ctx: AppContext) -> None:
-    """配信開始時の初期化を行う。"""
-    logger.info("[start_stream] 配信開始")
 
 
 
