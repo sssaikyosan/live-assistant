@@ -126,23 +126,6 @@ def _cmd_activity(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_comfyui(args: argparse.Namespace) -> int:
-    try:
-        workflow = json.loads(args.workflow)
-    except json.JSONDecodeError:
-        print(f"不正なJSON文字列です: {args.workflow}", file=sys.stderr)
-        return 1
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/comfyui",
-        json_body={"workflow": workflow},
-        timeout=120.0,
-    )
-    _print_json(resp.json())
-    return 0
-
-
 def _cmd_overlay_html(args: argparse.Namespace) -> int:
     resp = _request(
         args.base_url,
@@ -187,10 +170,6 @@ def _build_parser() -> argparse.ArgumentParser:
     activity = subparsers.add_parser("activity", help="稼働状況をオーバーレイに表示")
     activity.add_argument("text", help="稼働状況テキスト (空文字でクリア)")
     activity.set_defaults(func=_cmd_activity)
-
-    comfyui = subparsers.add_parser("comfyui", help="ComfyUIワークフロー実行")
-    comfyui.add_argument("workflow", help="ワークフローJSON文字列")
-    comfyui.set_defaults(func=_cmd_comfyui)
 
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")

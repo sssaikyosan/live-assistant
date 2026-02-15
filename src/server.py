@@ -278,20 +278,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
         })
 
-    async def handle_api_comfyui(request: web.Request) -> web.Response:
-        payload = await _read_json_body(request)
-        workflow = payload.get("workflow")
-        if not workflow or not isinstance(workflow, dict):
-            return web.json_response(
-                {"error": "workflow (ComfyUI ワークフローJSON) は必須です"}, status=400,
-            )
-        try:
-            result = await _comfyui_impl(ctx, workflow)
-            return web.json_response(result)
-        except Exception as e:
-            logger.exception("[comfyui] ワークフロー実行エラー")
-            return web.json_response({"error": str(e)}, status=500)
-
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
         """オーバーレイに動的HTMLを注入する。ファイルにも保存して永続化。"""
         payload = await _read_json_body(request)
@@ -335,7 +321,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_get("/api/status", handle_api_status)
     app.router.add_post("/api/start_stream", handle_api_start_stream)
     app.router.add_post("/api/activity", handle_api_activity)
-    app.router.add_post("/api/comfyui", handle_api_comfyui)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
@@ -1012,49 +997,5 @@ def _start_stream_impl(app_ctx: AppContext) -> str:
     return context_content if context_content else "(永続メモリはまだありません)"
 
 
-async def _comfyui_impl(
-    app_ctx: AppContext,
-    workflow: dict[str, Any],
-) -> dict[str, Any]:
-    """ComfyUI APIにワークフローJSONを送信してワークフローを実行し、結果を返す。"""
-    comfyui_config = app_ctx.config.get("comfyui", {})
-    base_url = comfyui_config.get("url", "http://127.0.0.1:8188").rstrip("/")
-
-    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "ワークフロー実行中"}))
-
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(f"{base_url}/prompt", json={"prompt": workflow})
-        resp.raise_for_status()
-        result = resp.json()
-        prompt_id = result["prompt_id"]
-        logger.info("[comfyui] プロンプト送信完了: %s", prompt_id)
-
-        for _ in range(120):
-            await asyncio.sleep(1)
-            hist_resp = await client.get(f"{base_url}/history/{prompt_id}")
-            hist_resp.raise_for_status()
-            history = hist_resp.json()
-            if prompt_id in history:
-                outputs = history[prompt_id].get("outputs", {})
-                for node_id, node_output in outputs.items():
-                    images = node_output.get("images", [])
-                    if images:
-                        img_info = images[0]
-                        filename = img_info["filename"]
-                        subfolder = img_info.get("subfolder", "")
-                        view_params = f"filename={filename}"
-                        if subfolder:
-                            view_params += f"&subfolder={subfolder}"
-                        url = f"{base_url}/view?{view_params}"
-                        await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
-                        logger.info("[comfyui] ワークフロー完了: %s", url)
-                        return {
-                            "filename": filename,
-                            "url": url,
-                        }
-                break
-
-    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
-    return {"error": "ワークフロー実行がタイムアウトしました"}
 
 
