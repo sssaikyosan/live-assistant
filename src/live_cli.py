@@ -106,10 +106,9 @@ def _cmd_start_stream(args: argparse.Namespace) -> int:
         return 1
     resp = _request(args.base_url, "POST", "/api/start_stream", json_body={})
     data = resp.json()
-    print(data.get("context", ""))
     screenshot_path = data.get("screenshot_path")
     if screenshot_path:
-        print(f"\nscreenshot_path: {screenshot_path}")
+        print(f"screenshot_path: {screenshot_path}")
     return 0
 
 

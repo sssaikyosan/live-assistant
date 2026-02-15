@@ -97,7 +97,6 @@ class AppContext:
     _history_max: int = 20
     sse_clients: list[web.StreamResponse] = field(default_factory=list)
     _audio_cache: dict[str, tuple[float, bytes]] = field(default_factory=dict)
-    memory_dir: Path = field(default_factory=lambda: _PROJECT_ROOT / "memory")
     _speak_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
 
@@ -272,9 +271,8 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         return web.json_response(_get_stream_status_impl(ctx))
 
     async def handle_api_start_stream(request: web.Request) -> web.Response:
-        context_content = _start_stream_impl(ctx)
+        _start_stream_impl(ctx)
         return web.json_response({
-            "context": context_content,
             "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
         })
 
@@ -654,10 +652,6 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
     config = _load_config()
     ctx = AppContext(config=config)
 
-    # メモリディレクトリの初期化
-    ctx.memory_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("メモリディレクトリ: %s", ctx.memory_dir)
-
     # pygame.mixer を事前初期化 (マイク録音開始前に行うことで sounddevice との干渉を防ぐ)
     try:
         pygame.mixer.init(frequency=24000, size=-16, channels=1)
@@ -957,44 +951,9 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
     }
 
 
-def _validate_note_key(key: str) -> None:
-    """ノートのkeyを検証し、不正なパスを拒否する。"""
-    key_path = Path(key)
-    if any(part == ".." for part in key_path.parts):
-        raise ValueError(f"keyに '..' を含めることはできません: {key}")
-    if key_path.is_absolute():
-        raise ValueError(f"keyは絶対パスにできません: {key}")
-    if key_path.drive or ":" in key:
-        raise ValueError(f"keyにドライブ指定はできません: {key}")
-
-
-def _resolve_note_path(app_ctx: AppContext, key: str) -> Path:
-    _validate_note_key(key)
-    memory_root = app_ctx.memory_dir.resolve()
-    file_path = (memory_root / f"{key}.md").resolve()
-    try:
-        file_path.relative_to(memory_root)
-    except ValueError:
-        raise ValueError(f"不正なkeyです: {key}")
-    return file_path
-
-
-def _start_stream_impl(app_ctx: AppContext) -> str:
-    """配信開始時に永続メモリ(context)読み込み + topics リセットを行う。"""
-    # context.md (永続メモリ) を読み込む
-    context_file = _resolve_note_path(app_ctx, "context")
-    context_content = ""
-    if context_file.is_file():
-        context_content = context_file.read_text(encoding="utf-8")
-    logger.info("[start_stream] context.md loaded (%d bytes)", len(context_content))
-
-    # topics.md をリセット
-    topics_file = _resolve_note_path(app_ctx, "topics")
-    topics_file.parent.mkdir(parents=True, exist_ok=True)
-    topics_file.write_text("", encoding="utf-8")
-    logger.info("[start_stream] topics.md をリセットしました")
-
-    return context_content if context_content else "(永続メモリはまだありません)"
+def _start_stream_impl(app_ctx: AppContext) -> None:
+    """配信開始時の初期化を行う。"""
+    logger.info("[start_stream] 配信開始")
 
 
 
