@@ -270,10 +270,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         await _broadcast_sse(ctx, event_type, json.dumps(data))
         return web.json_response({"result": "ok"})
 
-    async def handle_healthz(request: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "now": time.time()})
-
-    app.router.add_get("/healthz", handle_healthz)
     app.router.add_post("/api/wait", handle_api_wait)
     app.router.add_post("/api/speak", handle_api_speak)
     app.router.add_get("/api/status", handle_api_status)

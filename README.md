@@ -115,16 +115,6 @@ pkill -f "live-assistant serve"
 
 または、サーバーを起動したターミナルで `Ctrl+C` を押す。
 
-## 他プロジェクトからの利用
-
-`pip install -e .` により `live-assistant` コマンドがどのディレクトリからでも使える。
-さらに SKILL.md をユーザーレベルに配置すると、任意のプロジェクトで `/live-assistant` スキルを呼び出せる。
-
-```bash
-# Windows
-mkdir %USERPROFILE%\.claude\skills\live-assistant
-copy .claude\skills\live-assistant\SKILL.md %USERPROFILE%\.claude\skills\live-assistant\SKILL.md
-```
 
 ## Agent Compatibility
 
