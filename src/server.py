@@ -301,6 +301,20 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         except ValueError as e:
             return web.json_response({"error": str(e)}, status=400)
 
+    async def handle_api_generate_image(request: web.Request) -> web.Response:
+        payload = await _read_json_body(request)
+        workflow = payload.get("workflow")
+        if not workflow or not isinstance(workflow, dict):
+            return web.json_response(
+                {"error": "workflow (ComfyUI ワークフローJSON) は必須です"}, status=400,
+            )
+        try:
+            result = await _generate_image_impl(ctx, workflow)
+            return web.json_response(result)
+        except Exception as e:
+            logger.exception("[comfyui] 画像生成エラー")
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
         """オーバーレイに動的HTMLを注入する。"""
         payload = await _read_json_body(request)
@@ -335,6 +349,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/save_note", handle_api_save_note)
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
+    app.router.add_post("/api/generate_image", handle_api_generate_image)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
@@ -858,6 +873,15 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
         logger.warning("音声再生に失敗: %s", e)
         return f"音声再生に失敗しました: {e}"
 
+    # 自分の発言を履歴に追加 (会話の順序を保持する)
+    app_ctx.history.append({
+        "text": text,
+        "time": time.time(),
+        "source": "assistant",
+    })
+    if len(app_ctx.history) > app_ctx._history_max:
+        app_ctx.history = app_ctx.history[-app_ctx._history_max:]
+
     return f"読み上げ完了: {text}"
 
 
@@ -997,5 +1021,50 @@ def _load_note_impl(app_ctx: AppContext, key: str) -> str:
     content = file_path.read_text(encoding="utf-8")
     logger.info("[memory] load_note: %s (%d bytes)", key, len(content))
     return content
+
+
+async def _generate_image_impl(
+    app_ctx: AppContext,
+    workflow: dict[str, Any],
+) -> dict[str, Any]:
+    """ComfyUI APIにワークフローJSONを送信して画像を生成し、ファイルパスを返す。"""
+    comfyui_config = app_ctx.config.get("comfyui", {})
+    base_url = comfyui_config.get("url", "http://127.0.0.1:8188").rstrip("/")
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(f"{base_url}/prompt", json={"prompt": workflow})
+        resp.raise_for_status()
+        result = resp.json()
+        prompt_id = result["prompt_id"]
+        logger.info("[comfyui] プロンプト送信完了: %s", prompt_id)
+
+        for _ in range(120):
+            await asyncio.sleep(1)
+            hist_resp = await client.get(f"{base_url}/history/{prompt_id}")
+            hist_resp.raise_for_status()
+            history = hist_resp.json()
+            if prompt_id in history:
+                outputs = history[prompt_id].get("outputs", {})
+                for node_id, node_output in outputs.items():
+                    images = node_output.get("images", [])
+                    if images:
+                        img_info = images[0]
+                        filename = img_info["filename"]
+                        subfolder = img_info.get("subfolder", "")
+                        params = {"filename": filename}
+                        if subfolder:
+                            params["subfolder"] = subfolder
+                        img_resp = await client.get(f"{base_url}/view", params=params)
+                        img_resp.raise_for_status()
+                        save_path = _PROJECT_ROOT / "generated_image.png"
+                        save_path.write_bytes(img_resp.content)
+                        logger.info("[comfyui] 画像生成完了: %s", save_path)
+                        return {
+                            "path": str(save_path),
+                            "filename": filename,
+                        }
+                break
+
+    return {"error": "画像生成がタイムアウトしました"}
 
 

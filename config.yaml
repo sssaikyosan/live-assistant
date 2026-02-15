@@ -21,6 +21,9 @@ onecomme:
   host: "127.0.0.1"
   port: 11180                 # わんコメのデフォルトポート
 
+comfyui:
+  url: "http://127.0.0.1:8188"
+
 whisper:
   model: "large-v3-turbo"              # faster-whisper モデル (tiny/base/small/medium/large-v3)
   language: "ja"

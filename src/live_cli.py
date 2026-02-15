@@ -172,6 +172,23 @@ def _cmd_load_note(args: argparse.Namespace) -> int:
 
 
 
+def _cmd_generate_image(args: argparse.Namespace) -> int:
+    workflow_path = Path(args.workflow)
+    if not workflow_path.is_file():
+        print(f"ワークフローファイルが見つかりません: {args.workflow}", file=sys.stderr)
+        return 1
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    resp = _request(
+        args.base_url,
+        "POST",
+        "/api/generate_image",
+        json_body={"workflow": workflow},
+        timeout=120.0,
+    )
+    _print_json(resp.json())
+    return 0
+
+
 def _cmd_overlay_html(args: argparse.Namespace) -> int:
     resp = _request(
         args.base_url,
@@ -220,6 +237,10 @@ def _build_parser() -> argparse.ArgumentParser:
     load_note = subparsers.add_parser("load-note", help="memory/{key}.md を表示")
     load_note.add_argument("key")
     load_note.set_defaults(func=_cmd_load_note)
+
+    gen_image = subparsers.add_parser("generate-image", help="ComfyUIで画像生成")
+    gen_image.add_argument("workflow", help="ComfyUI ワークフローJSONファイルのパス")
+    gen_image.set_defaults(func=_cmd_generate_image)
 
     overlay_html = subparsers.add_parser("overlay-html", help="オーバーレイに動的HTML注入")
     overlay_html.add_argument("html", help="HTMLコンテンツ (空文字でクリア)")
