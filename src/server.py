@@ -247,12 +247,13 @@ def _create_http_app(ctx: AppContext) -> web.Application:
                 {"error": "text は必須です"},
                 status=400,
             )
+        speed_scale = payload.get("speed_scale")
         sync = _to_bool(payload.get("sync", False), default=False)
         if sync:
-            result = await _speak_impl(ctx, text)
+            result = await _speak_impl(ctx, text, speed_scale=speed_scale)
             return web.json_response({"result": result, "queued": False})
 
-        task = asyncio.create_task(_speak_impl(ctx, text))
+        task = asyncio.create_task(_speak_impl(ctx, text, speed_scale=speed_scale))
         ctx.background_tasks.add(task)
 
         def _on_done(done_task: asyncio.Task[Any]) -> None:
@@ -328,6 +329,13 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         await _broadcast_sse(ctx, "html", json.dumps(sse_data))
         return web.json_response({"result": "ok"})
 
+    async def handle_api_activity(request: web.Request) -> web.Response:
+        """稼働状況テキストをオーバーレイに表示する。"""
+        payload = await _read_json_body(request)
+        text = str(payload.get("text", ""))
+        await _broadcast_sse(ctx, "activity", json.dumps({"text": text}))
+        return web.json_response({"result": "ok"})
+
     async def handle_api_overlay_custom(request: web.Request) -> web.Response:
         """オーバーレイに任意のSSEイベントを送信する。"""
         payload = await _read_json_body(request)
@@ -349,6 +357,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/save_note", handle_api_save_note)
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
+    app.router.add_post("/api/activity", handle_api_activity)
     app.router.add_post("/api/generate_image", handle_api_generate_image)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
@@ -807,14 +816,15 @@ async def _wait_for_comments_impl(
     return text_result
 
 
-async def _speak_impl(app_ctx: AppContext, text: str) -> str:
+async def _speak_impl(app_ctx: AppContext, text: str, *, speed_scale: float | None = None) -> str:
     """VOICEVOXで音声合成してスピーカーから再生する。再生完了まで待つ。"""
     async with app_ctx._speak_lock:
-        return await _speak_impl_locked(app_ctx, text)
+        return await _speak_impl_locked(app_ctx, text, speed_scale=speed_scale)
 
 
-async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
+async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: float | None = None) -> str:
     """speak の排他ロック内で実行される本体。"""
+    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "読み上げ中"}))
     # 配信者が発話中なら最大2秒待ってIDLEになるのを待つ
     for _ in range(20):  # 20 * 0.1s = 2s
         if app_ctx.mic_vad_state == "IDLE":
@@ -836,6 +846,11 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
             )
             resp.raise_for_status()
             query = resp.json()
+
+            # 速度調整 (引数優先、なければconfig、なければデフォルト)
+            effective_speed = speed_scale if speed_scale is not None else voicevox_config.get("speed_scale")
+            if effective_speed is not None:
+                query["speedScale"] = float(effective_speed)
 
             # 2. synthesis
             resp = await client.post(
@@ -872,6 +887,8 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str) -> str:
     except Exception as e:
         logger.warning("音声再生に失敗: %s", e)
         return f"音声再生に失敗しました: {e}"
+
+    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
 
     # 自分の発言を履歴に追加 (会話の順序を保持する)
     app_ctx.history.append({
@@ -1031,6 +1048,8 @@ async def _generate_image_impl(
     comfyui_config = app_ctx.config.get("comfyui", {})
     base_url = comfyui_config.get("url", "http://127.0.0.1:8188").rstrip("/")
 
+    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "画像生成中"}))
+
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(f"{base_url}/prompt", json={"prompt": workflow})
         resp.raise_for_status()
@@ -1056,8 +1075,11 @@ async def _generate_image_impl(
                             params["subfolder"] = subfolder
                         img_resp = await client.get(f"{base_url}/view", params=params)
                         img_resp.raise_for_status()
-                        save_path = _PROJECT_ROOT / "generated_image.png"
+                        gen_dir = _PROJECT_ROOT / "generated"
+                        gen_dir.mkdir(exist_ok=True)
+                        save_path = gen_dir / filename
                         save_path.write_bytes(img_resp.content)
+                        await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
                         logger.info("[comfyui] 画像生成完了: %s", save_path)
                         return {
                             "path": str(save_path),
@@ -1065,6 +1087,7 @@ async def _generate_image_impl(
                         }
                 break
 
+    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
     return {"error": "画像生成がタイムアウトしました"}
 
 

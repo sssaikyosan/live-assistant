@@ -116,6 +116,8 @@ def _cmd_speak(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {"text": args.text}
     if args.sync:
         body["sync"] = True
+    if args.speed is not None:
+        body["speed_scale"] = args.speed
     resp = _request(
         args.base_url,
         "POST",
@@ -172,20 +174,38 @@ def _cmd_load_note(args: argparse.Namespace) -> int:
 
 
 
+def _cmd_activity(args: argparse.Namespace) -> int:
+    resp = _request(
+        args.base_url,
+        "POST",
+        "/api/activity",
+        json_body={"text": args.text},
+    )
+    print(resp.json().get("result", ""))
+    return 0
+
+
 def _cmd_generate_image(args: argparse.Namespace) -> int:
     workflow_path = Path(args.workflow)
     if not workflow_path.is_file():
         print(f"ワークフローファイルが見つかりません: {args.workflow}", file=sys.stderr)
         return 1
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/generate_image",
-        json_body={"workflow": workflow},
-        timeout=120.0,
-    )
-    _print_json(resp.json())
+    try:
+        resp = _request(
+            args.base_url,
+            "POST",
+            "/api/generate_image",
+            json_body={"workflow": workflow},
+            timeout=120.0,
+        )
+        _print_json(resp.json())
+    finally:
+        # 使用後にワークフローファイルを自動削除
+        try:
+            workflow_path.unlink()
+        except OSError:
+            pass
     return 0
 
 
@@ -221,6 +241,7 @@ def _build_parser() -> argparse.ArgumentParser:
     speak = subparsers.add_parser("speak", help="VOICEVOXで読み上げ")
     speak.add_argument("text")
     speak.add_argument("--sync", action="store_true", help="再生完了まで待つ")
+    speak.add_argument("--speed", type=float, default=None, help="読み上げ速度 (1.0=通常)")
     speak.set_defaults(func=_cmd_speak)
 
     status = subparsers.add_parser("status", help="配信状態を表示")
@@ -237,6 +258,10 @@ def _build_parser() -> argparse.ArgumentParser:
     load_note = subparsers.add_parser("load-note", help="memory/{key}.md を表示")
     load_note.add_argument("key")
     load_note.set_defaults(func=_cmd_load_note)
+
+    activity = subparsers.add_parser("activity", help="稼働状況をオーバーレイに表示")
+    activity.add_argument("text", help="稼働状況テキスト (空文字でクリア)")
+    activity.set_defaults(func=_cmd_activity)
 
     gen_image = subparsers.add_parser("generate-image", help="ComfyUIで画像生成")
     gen_image.add_argument("workflow", help="ComfyUI ワークフローJSONファイルのパス")
