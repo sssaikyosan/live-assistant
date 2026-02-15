@@ -13,15 +13,9 @@ description: ライブ配信アシスタントを `live-assistant` CLI で運用
 メインが担当する処理: `wait`, `speak`, 画面確認（Read ツールで `screenshot.jpg` を読む）
 サブエージェントに委任する処理: トピック調査、画面分析・実況、オーバーレイ表示、ノート保存
 
-## Start Service
+## Start Stream
 
-1. 起動済みでない場合はサービスを起動する。
-
-```bash
-live-assistant serve
-```
-
-2. 配信開始時に永続メモリ（context）を読み込み、トピックを初期化する。出力に `screenshot_path` が含まれるので保持する。
+サーバー (`live-assistant serve`) は事前に手動で起動されている前提。配信開始時に以下を実行する。出力に `screenshot_path` が含まれるので保持する。
 
 ```bash
 live-assistant start-stream

@@ -96,7 +96,7 @@ live-assistant serve
 
 ### 2. 配信アシスタント開始
 
-Claude Code で `/live-assistant` スキルを実行すると、エージェントが以下を自動実行：
+サーバーが起動した状態で、Claude Code で `/live-assistant` スキルを実行する。エージェントが以下を自動実行：
 1. `live-assistant start-stream` — 前回ログ読み込み、トピック初期化
 2. トピック調査エージェント起動（バックグラウンド）
 3. メインループ — `wait` → 応答 → `speak` → ループ

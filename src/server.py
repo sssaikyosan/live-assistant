@@ -335,7 +335,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/save_note", handle_api_save_note)
     app.router.add_get("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/load_note", handle_api_load_note)
-app.router.add_post("/api/overlay/html", handle_api_overlay_html)
+    app.router.add_post("/api/overlay/html", handle_api_overlay_html)
     app.router.add_post("/api/overlay/event", handle_api_overlay_custom)
     app.router.add_get("/overlay/events", handle_overlay_events)
     app.router.add_get("/overlay/audio/{audio_id}", handle_overlay_audio)
