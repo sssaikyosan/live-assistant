@@ -278,31 +278,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
         })
 
-    async def handle_api_save_note(request: web.Request) -> web.Response:
-        payload = await _read_json_body(request)
-        key = str(payload.get("key", "")).strip()
-        if not key:
-            return web.json_response({"error": "key は必須です"}, status=400)
-        content = str(payload.get("content", ""))
-        try:
-            result = _save_note_impl(ctx, key, content)
-            return web.json_response({"result": result})
-        except ValueError as e:
-            return web.json_response({"error": str(e)}, status=400)
-
-    async def handle_api_load_note(request: web.Request) -> web.Response:
-        key = request.query.get("key", "").strip()
-        if not key:
-            payload = await _read_json_body(request)
-            key = str(payload.get("key", "")).strip()
-        if not key:
-            return web.json_response({"error": "key は必須です"}, status=400)
-        try:
-            content = _load_note_impl(ctx, key)
-            return web.json_response({"content": content})
-        except ValueError as e:
-            return web.json_response({"error": str(e)}, status=400)
-
     async def handle_api_comfyui(request: web.Request) -> web.Response:
         payload = await _read_json_body(request)
         workflow = payload.get("workflow")
@@ -318,7 +293,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_api_overlay_html(request: web.Request) -> web.Response:
-        """オーバーレイに動的HTMLを注入する。"""
+        """オーバーレイに動的HTMLを注入する。ファイルにも保存して永続化。"""
         payload = await _read_json_body(request)
         html_content = payload.get("html", "")
         css_content = payload.get("css", "")
@@ -327,6 +302,10 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             sse_data["html"] = html_content
         if css_content:
             sse_data["css"] = css_content
+        # ファイルに保存して永続化（ページリロードでも復元可能）
+        saved = {"html": html_content or "", "css": css_content or ""}
+        saved_path = _overlay_dir / "dynamic-state.json"
+        saved_path.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
         await _broadcast_sse(ctx, "html", json.dumps(sse_data))
         return web.json_response({"result": "ok"})
 
@@ -355,9 +334,6 @@ def _create_http_app(ctx: AppContext) -> web.Application:
     app.router.add_post("/api/speak", handle_api_speak)
     app.router.add_get("/api/status", handle_api_status)
     app.router.add_post("/api/start_stream", handle_api_start_stream)
-    app.router.add_post("/api/save_note", handle_api_save_note)
-    app.router.add_get("/api/load_note", handle_api_load_note)
-    app.router.add_post("/api/load_note", handle_api_load_note)
     app.router.add_post("/api/activity", handle_api_activity)
     app.router.add_post("/api/comfyui", handle_api_comfyui)
     app.router.add_post("/api/overlay/html", handle_api_overlay_html)
@@ -1034,25 +1010,6 @@ def _start_stream_impl(app_ctx: AppContext) -> str:
     logger.info("[start_stream] topics.md をリセットしました")
 
     return context_content if context_content else "(永続メモリはまだありません)"
-
-
-def _save_note_impl(app_ctx: AppContext, key: str, content: str) -> str:
-    """memory/{key}.md にcontentを書き込む（上書き）。"""
-    file_path = _resolve_note_path(app_ctx, key)
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(content, encoding="utf-8")
-    logger.info("[memory] save_note: %s (%d bytes)", key, len(content))
-    return f"保存しました: memory/{key}.md ({len(content)} bytes)"
-
-
-def _load_note_impl(app_ctx: AppContext, key: str) -> str:
-    """memory/{key}.md を読み込んで内容を返す。"""
-    file_path = _resolve_note_path(app_ctx, key)
-    if not file_path.is_file():
-        return ""
-    content = file_path.read_text(encoding="utf-8")
-    logger.info("[memory] load_note: %s (%d bytes)", key, len(content))
-    return content
 
 
 async def _comfyui_impl(

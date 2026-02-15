@@ -300,8 +300,42 @@
       };
     }
 
+    // --- 保存済み動的コンテンツの復元 ---
+    async function restoreDynamicContent() {
+      try {
+        const resp = await fetch('/overlay/dynamic-state.json?' + Date.now());
+        if (resp.ok) {
+          const data = await resp.json();
+          const container = document.getElementById('dynamic-content');
+          if (data.html) {
+            container.innerHTML = data.html;
+            container.querySelectorAll('script').forEach(oldScript => {
+              const newScript = document.createElement('script');
+              for (const attr of oldScript.attributes) {
+                newScript.setAttribute(attr.name, attr.value);
+              }
+              newScript.textContent = oldScript.textContent;
+              oldScript.parentNode.replaceChild(newScript, oldScript);
+            });
+          }
+          if (data.css) {
+            let styleEl = document.getElementById('dynamic-style');
+            if (!styleEl) {
+              styleEl = document.createElement('style');
+              styleEl.id = 'dynamic-style';
+              document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = data.css;
+          }
+        }
+      } catch (e) {
+        console.log('No saved dynamic content to restore');
+      }
+    }
+
     // --- 起動 ---
     initSprite();
+    restoreDynamicContent();
     connectSSE();
   </script>
 </body>

@@ -7,11 +7,7 @@ import asyncio
 import json
 import io
 import sys
-from pathlib import Path
 from typing import Any
-
-import subprocess
-import time as _time
 
 import httpx
 
@@ -49,38 +45,6 @@ def _is_service_running(base_url: str) -> bool:
     except Exception:
         return False
 
-
-def _ensure_service(base_url: str, timeout_sec: int = 30) -> bool:
-    """サービスが未起動なら自動でバックグラウンド起動する。
-
-    Returns:
-        True if service is running (or was started), False if failed.
-    """
-    if _is_service_running(base_url):
-        return True
-
-    print("サービス未起動 → バックグラウンドで起動中...", file=sys.stderr)
-    project_root = Path(__file__).resolve().parent.parent
-    # 新しいプロセスとしてserveを起動 (デタッチ)
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "src.live_cli", "serve"],
-        cwd=str(project_root),
-        stdout=subprocess.DEVNULL,
-        stderr=open(str(project_root / "server.log"), "a"),
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0),
-    )
-    print(f"サービスプロセス起動 (PID={proc.pid})", file=sys.stderr)
-
-    # 起動を待つ
-    deadline = _time.time() + timeout_sec
-    while _time.time() < deadline:
-        _time.sleep(1)
-        if _is_service_running(base_url):
-            print("サービス起動完了!", file=sys.stderr)
-            return True
-    print("サービス起動タイムアウト", file=sys.stderr)
-    return False
 
 
 def _cmd_serve(_args: argparse.Namespace) -> int:
@@ -136,9 +100,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_start_stream(args: argparse.Namespace) -> int:
-    # サービスが未起動なら自動起動
-    if not _ensure_service(args.base_url):
-        print("サービスの起動に失敗しました", file=sys.stderr)
+    # サービスが起動済みか確認（自動起動はしない）
+    if not _is_service_running(args.base_url):
+        print("サービスが起動していません。先に 'live-assistant serve' を実行してください。", file=sys.stderr)
         return 1
     resp = _request(args.base_url, "POST", "/api/start_stream", json_body={})
     data = resp.json()
@@ -148,29 +112,6 @@ def _cmd_start_stream(args: argparse.Namespace) -> int:
         print(f"\nscreenshot_path: {screenshot_path}")
     return 0
 
-
-def _cmd_save_note(args: argparse.Namespace) -> int:
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/save_note",
-        json_body={"key": args.key, "content": args.content},
-    )
-    data = resp.json()
-    print(data.get("result", ""))
-    return 0
-
-
-def _cmd_load_note(args: argparse.Namespace) -> int:
-    resp = _request(
-        args.base_url,
-        "POST",
-        "/api/load_note",
-        json_body={"key": args.key},
-    )
-    data = resp.json()
-    print(data.get("content", ""))
-    return 0
 
 
 
@@ -242,15 +183,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
     start_stream = subparsers.add_parser("start-stream", help="配信開始初期化")
     start_stream.set_defaults(func=_cmd_start_stream)
-
-    save_note = subparsers.add_parser("save-note", help="memory/{key}.md に保存")
-    save_note.add_argument("key")
-    save_note.add_argument("content")
-    save_note.set_defaults(func=_cmd_save_note)
-
-    load_note = subparsers.add_parser("load-note", help="memory/{key}.md を表示")
-    load_note.add_argument("key")
-    load_note.set_defaults(func=_cmd_load_note)
 
     activity = subparsers.add_parser("activity", help="稼働状況をオーバーレイに表示")
     activity.add_argument("text", help="稼働状況テキスト (空文字でクリア)")
