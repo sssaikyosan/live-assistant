@@ -92,6 +92,7 @@ class AppContext:
     screenshot_task: asyncio.Task | None = None
     mic_vad_state: str = "IDLE"  # "IDLE" | "SPEAKING" | "TRAILING" | "TRANSCRIBING"
     whisper_model: Any = None
+    recent_texts: list[str] = field(default_factory=list)  # 直近の文字起こし・発話テキスト (prompt用)
     history: list[dict] = field(default_factory=list)
     _history_max: int = 20
     sse_clients: list[web.StreamResponse] = field(default_factory=list)
@@ -438,7 +439,7 @@ async def _onecomme_loop(ctx: AppContext) -> None:
             await asyncio.sleep(5)
 
 
-def _do_transcribe(model: Any, audio: np.ndarray, language: str, beam_size: int) -> dict:
+def _do_transcribe(model: Any, audio: np.ndarray, language: str, beam_size: int, initial_prompt: str | None = None) -> dict:
     """faster-whisperで文字起こしする (スレッドプール用の同期関数)。
 
     Returns:
@@ -446,6 +447,7 @@ def _do_transcribe(model: Any, audio: np.ndarray, language: str, beam_size: int)
     """
     segments, _info = model.transcribe(
         audio, language=language, beam_size=beam_size, vad_filter=False,
+        initial_prompt=initial_prompt,
     )
     texts = []
     max_no_speech_prob = 0.0
@@ -475,13 +477,16 @@ async def _transcribe_and_enqueue(ctx: AppContext, speech_buf: list[np.ndarray])
     language = whisper_config.get("language", "ja")
     beam_size = whisper_config.get("beam_size", 5)
 
-    logger.info("[whisper] 文字起こし開始 (%.1f秒の音声)", duration)
+    # 直前の会話コンテキストを initial_prompt として渡す
+    initial_prompt = "。".join(ctx.recent_texts) if ctx.recent_texts else None
+
+    logger.info("[whisper] 文字起こし開始 (%.1f秒の音声, prompt=%s)", duration, initial_prompt[:60] if initial_prompt else None)
     t0 = time.time()
 
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, _do_transcribe, ctx.whisper_model, audio, language, beam_size,
+            None, _do_transcribe, ctx.whisper_model, audio, language, beam_size, initial_prompt,
         )
     except Exception:
         logger.exception("[whisper] 文字起こしエラー")
@@ -506,6 +511,11 @@ async def _transcribe_and_enqueue(ctx: AppContext, speech_buf: list[np.ndarray])
     if duration < 1.5 and len(text) > 20:
         logger.info("[whisper] 短音声+長テキスト除外: '%s' (%.1f秒)", text, duration)
         return
+
+    # 直近テキストを保持 (次回の initial_prompt 用)
+    ctx.recent_texts.append(text)
+    if len(ctx.recent_texts) > 5:
+        ctx.recent_texts.pop(0)
 
     event = {
         "text": text,
@@ -898,6 +908,11 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: flo
     })
     if len(app_ctx.history) > app_ctx._history_max:
         app_ctx.history = app_ctx.history[-app_ctx._history_max:]
+
+    # whisper の initial_prompt 用に直近テキストを保持
+    app_ctx.recent_texts.append(text)
+    if len(app_ctx.recent_texts) > 5:
+        app_ctx.recent_texts.pop(0)
 
     return f"読み上げ完了: {text}"
 

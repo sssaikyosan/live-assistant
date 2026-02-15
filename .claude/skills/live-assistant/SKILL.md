@@ -34,6 +34,7 @@ live-assistant start-stream
 - スクショ前: `speak "画面を見てみるのだ！"` → Read ツールで `screenshot_path`
 - 調べ物前: `speak "ちょっと調べてくるのだ！"` → Web検索/サブエージェント
 - 画像探し前: `speak "画像を探してくるのだ！"` → 画像検索
+- 画像生成前: `speak "画像を作ってみるのだ！"` → 画像生成
 
 ## Sub-Agent Delegation
 
@@ -90,6 +91,114 @@ live-assistant overlay-html ""
 ```
 
 画像表示もHTML内の`<img>`タグで行う。複数画像の同時表示、SVGグラフ、任意のHTMLコンテンツが可能。
+
+## Image Generation
+
+ComfyUIで画像を生成して配信画面に表示できる。
+
+### 使い方
+
+1. 一時ファイルとしてComfyUIワークフローJSONを作成する
+2. `live-assistant generate-image <JSONファイルパス>` を実行
+3. 生成された画像パスが返されるので、`overlay-html` で `<img>` タグとして表示
+
+### ワークフローJSON生成ガイド
+
+ComfyUIワークフローは以下のノード構成で動的に生成する:
+
+```json
+{
+  "3": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0,
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "4": {
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "5": {
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "6": {
+    "inputs": {
+      "text": "YOUR_POSITIVE_PROMPT_HERE",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "7": {
+    "inputs": {
+      "text": "text, watermark, low quality",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "8": {
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["8", 0]
+    },
+    "class_type": "SaveImage"
+  }
+}
+```
+
+**ノード6の `text` フィールドにプロンプトを埋め込む**。
+
+### 例: 猫の画像生成
+
+```bash
+# 1. JSONワークフロー生成（プロンプトを埋め込み）
+cat > /tmp/workflow.json << 'JSON_EOF'
+{
+  "3": {"inputs": {"seed": 12345, "steps": 20, "cfg": 7.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}, "class_type": "KSampler"},
+  "4": {"inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"}, "class_type": "CheckpointLoaderSimple"},
+  "5": {"inputs": {"width": 512, "height": 512, "batch_size": 1}, "class_type": "EmptyLatentImage"},
+  "6": {"inputs": {"text": "a cute cat playing with a ball, high quality, detailed", "clip": ["4", 1]}, "class_type": "CLIPTextEncode"},
+  "7": {"inputs": {"text": "text, watermark, low quality", "clip": ["4", 1]}, "class_type": "CLIPTextEncode"},
+  "8": {"inputs": {"samples": ["3", 0], "vae": ["4", 2]}, "class_type": "VAEDecode"},
+  "9": {"inputs": {"filename_prefix": "ComfyUI", "images": ["8", 0]}, "class_type": "SaveImage"}
+}
+JSON_EOF
+
+# 2. 画像生成
+live-assistant generate-image /tmp/workflow.json
+
+# 3. 結果（例）: {"path": "C:\PJ\live-assistant\generated\ComfyUI_00001.png", "filename": "ComfyUI_00001.png"}
+
+# 4. オーバーレイ表示
+live-assistant overlay-html '<img src="file:///C:/PJ/live-assistant/generated/ComfyUI_00001.png" style="max-width: 80%; border: 4px solid #00ff00; border-radius: 10px;">'
+```
+
+**重要**: 
+- JSONは1行に圧縮するか、HEREDOCで正しくエスケープする
+- ワークフローは毎回動的に生成し、プロンプトを差し替える
+- 生成後はファイルパスが返されるので、それを `overlay-html` で表示
 
 ## Note Operations
 
