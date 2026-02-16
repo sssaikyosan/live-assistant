@@ -34,6 +34,10 @@
       width: auto;
     }
 
+    #character #sprite-base {
+      position: relative;
+    }
+
     #subtitle {
       position: fixed;
       bottom: 52vh;
@@ -65,18 +69,14 @@
     }
 
     #status {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      color: rgba(255, 255, 255, 0.3);
-      font-size: 12px;
-      z-index: 20;
+      display: none;
     }
 
     #activity {
-      position: fixed;
-      bottom: 5vh;
-      right: 5vw;
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
       padding: 6px 14px;
       background: rgba(0, 0, 0, 0.6);
       color: #7eeda9;
@@ -233,13 +233,13 @@
   <div id="character">
     <img id="sprite-base" src="sprites/base.png" alt="">
     <img id="sprite-mouth" src="sprites/mouth_closed.png" alt="">
+    <div id="activity"></div>
   </div>
   <div id="subtitle">
     <div id="text"></div>
   </div>
   <div id="mic-queue"></div>
   <div id="dynamic-content"></div>
-  <div id="activity"></div>
   <div id="status">Loading...</div>
 
   <script>
