@@ -23,7 +23,7 @@ onecomme:
   port: 11180                 # わんコメのデフォルトポート
 
 whisper:
-  model: "RoachLin/kotoba-whisper-v2.2-faster"  # 日本語特化モデル (元: large-v3-turbo)
+  model: "large-v3-turbo"  # Whisper large-v3-turbo
   language: "ja"
   device: "cuda"
   compute_type: "float16"
