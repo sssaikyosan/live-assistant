@@ -82,6 +82,7 @@ class AppContext:
     _audio_cache: dict[str, tuple[float, bytes]] = field(default_factory=dict)
     _speak_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+    shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 # --- HTTPサーバー (コメント受信) ---
@@ -145,9 +146,12 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         ctx.sse_clients.append(resp)
         logger.info("[overlay] SSEクライアント接続 (total=%d)", len(ctx.sse_clients))
         try:
-            while True:
-                await asyncio.sleep(15)
-                await resp.write(b": keepalive\n\n")
+            while not ctx.shutdown_event.is_set():
+                try:
+                    await asyncio.wait_for(ctx.shutdown_event.wait(), timeout=15)
+                    break  # shutdown
+                except asyncio.TimeoutError:
+                    await resp.write(b": keepalive\n\n")
         except (asyncio.CancelledError, ConnectionResetError, ConnectionError):
             pass
         finally:
@@ -633,7 +637,7 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
         ctx.pygame_initialized = True
         logger.info("pygame.mixer 初期化完了")
     except Exception:
-        logger.exception("pygame.mixer の初期化に失敗")
+        logger.exception("pygame.mixer の初期化に失敗 — 音声再生は無効です")
 
     # faster-whisper モデルをロード
     whisper_config = config.get("whisper", {})
@@ -645,8 +649,10 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
             compute_type=whisper_config.get("compute_type", "int8"),
         )
         logger.info("Whisperモデルロード完了: %s", whisper_config.get("model", "small"))
+    except ImportError:
+        logger.error("faster-whisper がインストールされていません — マイク文字起こしは無効です")
     except Exception:
-        logger.exception("Whisperモデルのロードに失敗")
+        logger.exception("Whisperモデルのロードに失敗 — マイク文字起こしは無効です")
 
     # HTTPサーバー起動 (CLI API + overlay)
     host = "127.0.0.1"
@@ -670,6 +676,62 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
     ctx.http_runner = runner
     logger.info("HTTPサーバー起動: %s:%d", host, port)
 
+    # 外部サービスの到達確認
+    _problems: list[str] = []
+    if not ctx.pygame_initialized:
+        _problems.append("音声再生 (pygame) — 初期化失敗")
+    if ctx.whisper_model is None:
+        _problems.append("マイク文字起こし (Whisper) — モデル未ロード")
+
+    # VOICEVOX ヘルスチェック
+    voicevox_url = config.get("voicevox", {}).get("url", "http://localhost:50021")
+    try:
+        async with httpx.AsyncClient(timeout=3) as _hc:
+            _resp = await _hc.get(f"{voicevox_url.rstrip('/')}/version")
+            _resp.raise_for_status()
+            logger.info("VOICEVOX 接続OK (version %s)", _resp.text.strip())
+    except Exception:
+        _problems.append(f"VOICEVOX ({voicevox_url}) — 未起動または接続不可")
+
+    # OBS WebSocket ヘルスチェック
+    obs_config = config.get("obs", {})
+    obs_host = obs_config.get("host", "127.0.0.1")
+    obs_port = obs_config.get("port", 4455)
+    try:
+        import obsws_python
+        _obs_kw: dict[str, Any] = {"host": obs_host, "port": obs_port}
+        if obs_config.get("password"):
+            _obs_kw["password"] = obs_config["password"]
+        _obs_cl = obsws_python.ReqClient(**_obs_kw, timeout=3)
+        _obs_cl.disconnect()
+        logger.info("OBS WebSocket 接続OK (%s:%d)", obs_host, obs_port)
+    except Exception:
+        _problems.append(f"OBS WebSocket ({obs_host}:{obs_port}) — 未起動または接続不可")
+
+    # わんコメ ヘルスチェック (有効時のみ)
+    onecomme_config = config.get("onecomme", {})
+    if onecomme_config.get("enabled", False):
+        oc_host = onecomme_config.get("host", "127.0.0.1")
+        oc_port = onecomme_config.get("port", 11180)
+        try:
+            async with aiohttp.ClientSession() as _hc_session:
+                async with _hc_session.ws_connect(
+                    f"ws://{oc_host}:{oc_port}/sub", timeout=3
+                ) as _ws:
+                    await _ws.close()
+            logger.info("わんコメ 接続OK (%s:%d)", oc_host, oc_port)
+        except Exception:
+            _problems.append(f"わんコメ ({oc_host}:{oc_port}) — 未起動または接続不可")
+
+    # 起動サマリー
+    if _problems:
+        logger.warning("--- 起動時の問題 ---")
+        for p in _problems:
+            logger.warning("  - %s", p)
+        logger.warning("上記の機能は制限されます。必要に応じて該当サービスを起動してください。")
+    else:
+        logger.info("全コンポーネント正常に起動しました")
+
     # バックグラウンドマイク録音タスク起動 (クラッシュ時自動再起動付き)
     ctx.mic_task = asyncio.create_task(_mic_loop_with_restart(ctx))
     logger.info("バックグラウンドマイク録音タスク起動")
@@ -690,13 +752,14 @@ async def app_lifespan() -> AsyncIterator[AppContext]:
     try:
         yield ctx
     finally:
-        for task in (ctx.mic_task, ctx.onecomme_task, ctx.screenshot_task, overlay_watcher_task, *list(ctx.background_tasks)):
-            if task is not None:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        logger.info("シャットダウン中...")
+        # SSE ハンドラにシャットダウンを通知 (ループを即座に抜ける)
+        ctx.shutdown_event.set()
+        all_tasks = [t for t in (ctx.mic_task, ctx.onecomme_task, ctx.screenshot_task, overlay_watcher_task, *list(ctx.background_tasks)) if t is not None]
+        for task in all_tasks:
+            task.cancel()
+        if all_tasks:
+            await asyncio.wait(all_tasks, timeout=3)
         ctx.background_tasks.clear()
         if ctx.http_runner is not None:
             await ctx.http_runner.cleanup()

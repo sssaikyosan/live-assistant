@@ -46,6 +46,33 @@ def _cmd_serve(_args: argparse.Namespace) -> int:
         asyncio.run(_run_forever())
     except KeyboardInterrupt:
         pass
+    except OSError as e:
+        if e.errno in (10048, 98):  # EADDRINUSE (Windows / Linux)
+            print(
+                "エラー: ポート 50700 が使用中です。\n"
+                "  既に live-assistant が起動していないか確認してください。\n"
+                "  解決方法: 既存のプロセスを終了するか、しばらく待ってから再試行してください。",
+                file=sys.stderr,
+            )
+        elif e.errno in (10013, 13):  # EACCES (Windows / Linux)
+            print(
+                "エラー: ポート 50700 へのアクセスが拒否されました。\n"
+                "  管理者権限が必要か、別のアプリがポートを占有しています。",
+                file=sys.stderr,
+            )
+        else:
+            print(f"OSエラー: {e}", file=sys.stderr)
+        return 1
+    except ImportError as e:
+        print(
+            f"エラー: 必要なモジュールが見つかりません: {e.name}\n"
+            f"  'pip install -e .' で依存パッケージをインストールしてください。",
+            file=sys.stderr,
+        )
+        return 1
+    except Exception as e:
+        print(f"サーバー起動エラー: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
