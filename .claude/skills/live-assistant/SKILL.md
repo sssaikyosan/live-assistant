@@ -45,7 +45,7 @@ description: 配信アシスタントを `live-assistant` CLI で運用するた
 
 ### サブエージェント活用
 
-時間のかかる行動は、Task ツールでサブエージェント（Bash タイプ）をバックグラウンド実行し、メインループの wait を止めないようにする。
+時間のかかる行動（画像や音楽の生成、複数ページにわたるウェブ情報の取得、複数回のファイル編集等）は、Task ツールでサブエージェント（Bash タイプ）をバックグラウンド実行し、メインループの wait を止めないようにする。
 
 1. `speak` で開始を伝える
 2. Task ツール（`run_in_background: true`）でサブエージェントに実行させる
@@ -55,17 +55,9 @@ description: 配信アシスタントを `live-assistant` CLI で運用するた
 
 `overlay/slots/<name>.json` に Write ツールで JSON を書き込む。スロット名ごとに独立管理され、1つのスロットを変更しても他のスロットに影響しない。
 
-#### 音楽再生
+#### ComfyUI 生成ファイルの参照
 
-`<audio>` タグを含む HTML をスロットに書き込むことで BGM や効果音を再生できる。
-
-```json
-{"html": "<audio src='/files/output.wav' autoplay loop></audio>", "css": ""}
-```
-
-- `src` にはサーバーの `/files/` パス経由でプロジェクト内のファイルを指定する
-- ComfyUI で生成した音楽ファイルもこの方法で再生可能
-- 停止はスロットファイルを削除する
+ComfyUI で生成したファイル（画像・音楽）は ComfyUI の `/view?filename=<ファイル名>&type=output` エンドポイントで直接参照する。ComfyUI の URL・ポートは `config.yaml` を確認すること。ファイル名は ComfyUI の `/history` API レスポンスから取得できる。サイズ指定はピクセルではなく画面基準（vw/vh）を使う。スロット削除で停止・非表示にできる。
 
 ## Safety
 
