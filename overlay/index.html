@@ -34,10 +34,6 @@
       width: auto;
     }
 
-    #character #sprite-base {
-      position: relative;
-    }
-
     #subtitle {
       position: fixed;
       bottom: 52vh;
@@ -73,11 +69,11 @@
     }
 
     #activity {
-      position: absolute;
-      bottom: 2vh;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 6px 14px;
+      position: fixed;
+      bottom: 48vh;
+      right: 9.5vw;
+      transform: translateX(50%);
+      padding: 5px 12px;
       background: rgba(10, 15, 30, 0.92);
       color: #7eeda9;
       font-size: clamp(10px, 0.9vw, 16px);
@@ -236,11 +232,11 @@
   <div id="character">
     <img id="sprite-base" src="sprites/base.png" alt="">
     <img id="sprite-mouth" src="sprites/mouth_closed.png" alt="">
-    <div id="activity"></div>
   </div>
   <div id="subtitle">
     <div id="text"></div>
   </div>
+  <div id="activity"></div>
   <div id="mic-queue"></div>
   <div id="dynamic-content"></div>
   <div id="status">Loading...</div>
@@ -465,7 +461,7 @@
         entry.appendChild(status);
         queue.appendChild(entry);
         // 古いエントリを4件まで保持
-        while (queue.children.length > 4) {
+        while (queue.children.length > 3) {
           queue.removeChild(queue.firstChild);
         }
       });

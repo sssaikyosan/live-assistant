@@ -50,9 +50,9 @@ def _cmd_serve(_args: argparse.Namespace) -> int:
 
 
 def _cmd_wait(args: argparse.Namespace) -> int:
-    # 待機中ステータスを表示
+    # 待機中は表示しない (activity をクリア)
     try:
-        _request(args.base_url, "POST", "/api/activity", json_body={"text": "待機中"})
+        _request(args.base_url, "POST", "/api/activity", json_body={"text": ""})
     except Exception:
         pass
     resp = _request(
@@ -65,9 +65,9 @@ def _cmd_wait(args: argparse.Namespace) -> int:
         },
         timeout=max(float(args.timeout_sec) + 5.0, 30.0),
     )
-    # 行動中ステータスに切り替え
+    # 思考中ステータスに切り替え
     try:
-        _request(args.base_url, "POST", "/api/activity", json_body={"text": "行動中"})
+        _request(args.base_url, "POST", "/api/activity", json_body={"text": "思考中"})
     except Exception:
         pass
     _print_json(resp.json())
