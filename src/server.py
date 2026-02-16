@@ -251,7 +251,7 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         return web.json_response({"result": "queued", "queued": True})
 
     async def handle_api_status(request: web.Request) -> web.Response:
-        return web.json_response(_get_stream_status_impl(ctx))
+        return web.json_response(await _get_stream_status_impl(ctx))
 
     async def handle_api_activity(request: web.Request) -> web.Response:
         """稼働状況テキストをオーバーレイに表示する。"""
@@ -947,7 +947,19 @@ async def _overlay_file_watcher(ctx: AppContext) -> None:
             logger.debug("オーバーレイスロット監視エラー: %s", e)
 
 
-def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
+async def _check_comfyui_status(url: str) -> str:
+    """ComfyUI API の死活確認を行う。"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{url}/system_stats", timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                if resp.status == 200:
+                    return "running"
+                return f"error (HTTP {resp.status})"
+    except Exception as e:
+        return f"unreachable ({type(e).__name__})"
+
+
+async def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
     """配信の現在の状態を返す。"""
     now = time.time()
 
@@ -965,6 +977,11 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
         else:
             mic_status = "running"
 
+    # ComfyUI API の死活確認
+    comfyui_cfg = app_ctx.config.get("comfyui", {})
+    comfyui_url = comfyui_cfg.get("url", "http://127.0.0.1:8000")
+    comfyui_status = await _check_comfyui_status(comfyui_url)
+
     return {
         "seconds_since_last_comment": (
             round(elapsed_since_last, 1) if elapsed_since_last is not None else None
@@ -973,6 +990,7 @@ def _get_stream_status_impl(app_ctx: AppContext) -> dict[str, Any]:
         "pending_comments_in_queue": app_ctx.event_queue.qsize(),
         "mic_task_status": mic_status,
         "mic_vad_state": app_ctx.mic_vad_state,
+        "comfyui_status": comfyui_status,
         "screenshot_path": str(_PROJECT_ROOT / "screenshot.jpg"),
     }
 
