@@ -23,6 +23,7 @@
       bottom: 0;
       right: 0;
       height: 50vh;
+      z-index: 200;
     }
 
     #character img {
@@ -35,21 +36,22 @@
 
     #subtitle {
       position: fixed;
-      bottom: 5vh;
-      right: 12vw;
-      max-width: 35vw;
-      padding: 12px 28px;
-      background: rgba(0, 0, 0, 0.7);
+      bottom: 52vh;
+      right: 2vw;
+      max-width: 30vw;
+      padding: 12px 24px;
+      background: rgba(10, 15, 30, 0.9);
       color: #7eeda9;
-      font-size: clamp(14px, 1.3vw, 30px);
+      font-size: clamp(14px, 1.3vw, 28px);
       font-weight: bold;
-      border-radius: 12px;
-      text-align: left;
+      border-radius: 14px;
+      border: 2px solid rgba(126, 237, 169, 0.3);
+      text-align: center;
       opacity: 0;
       transition: opacity 0.3s ease;
       text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8);
       line-height: 1.4;
-      z-index: 10;
+      z-index: 210;
     }
 
     #subtitle.visible {
@@ -73,7 +75,7 @@
 
     #activity {
       position: fixed;
-      bottom: 52vh;
+      bottom: 5vh;
       right: 5vw;
       padding: 6px 14px;
       background: rgba(0, 0, 0, 0.6);
@@ -83,7 +85,7 @@
       border-left: 3px solid #7eeda9;
       opacity: 0;
       transition: opacity 0.3s ease;
-      z-index: 18;
+      z-index: 210;
       white-space: nowrap;
     }
 
@@ -96,13 +98,116 @@
       animation: blink 1.4s infinite;
     }
 
-    #activity .dot:nth-child(2) { animation-delay: 0.2s; }
-    #activity .dot:nth-child(3) { animation-delay: 0.4s; }
+    #activity .dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    #activity .dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
 
     @keyframes blink {
-      0%, 20% { opacity: 0; }
-      50% { opacity: 1; }
-      100% { opacity: 0; }
+
+      0%,
+      20% {
+        opacity: 0;
+      }
+
+      50% {
+        opacity: 1;
+      }
+
+      100% {
+        opacity: 0;
+      }
+    }
+
+    /* --- mic-queue --- */
+    #mic-queue {
+      position: fixed;
+      bottom: 1.5vh;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 50vw;
+      z-index: 210;
+      pointer-events: none;
+    }
+
+    .mic-entry {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      background: rgba(10, 15, 30, 0.92);
+      color: #e8f0ff;
+      font-size: clamp(14px, 1.3vw, 26px);
+      font-weight: bold;
+      border-radius: 10px;
+      border-left: 4px solid #5eb5f7;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+      animation: mic-slide-in 0.3s ease-out forwards;
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    .mic-entry .mic-icon {
+      flex-shrink: 0;
+      font-size: 0.7em;
+      background: #5eb5f7;
+      color: #0a0f1e;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .mic-entry .mic-status {
+      flex-shrink: 0;
+      font-size: 0.65em;
+      margin-left: auto;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+
+    .mic-entry .mic-status.unread {
+      color: #ff6b6b;
+    }
+
+    .mic-entry .mic-status.read {
+      color: #5eb5f7;
+    }
+
+    .mic-entry.processed {
+      animation: mic-slide-out 0.5s ease-in forwards;
+    }
+
+    @keyframes mic-slide-in {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes mic-slide-out {
+      from {
+        opacity: 1;
+        transform: translateX(0);
+      }
+
+      to {
+        opacity: 0;
+        transform: translateX(60px);
+      }
     }
 
     #dynamic-content {
@@ -118,7 +223,7 @@
       z-index: 16;
     }
 
-    #dynamic-content > * {
+    #dynamic-content>* {
       pointer-events: auto;
     }
   </style>
@@ -132,6 +237,7 @@
   <div id="subtitle">
     <div id="text"></div>
   </div>
+  <div id="mic-queue"></div>
   <div id="dynamic-content"></div>
   <div id="activity"></div>
   <div id="status">Loading...</div>
@@ -331,6 +437,57 @@
         if (slotEl) slotEl.remove();
         const styleEl = document.getElementById('slot-style-' + slotName);
         if (styleEl) styleEl.remove();
+      });
+
+      // --- mic-text: マイク入力テキストを画面に表示 ---
+      es.addEventListener('mic-text', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.id === undefined || data.text === undefined) return;
+        const queue = document.getElementById('mic-queue');
+        const entry = document.createElement('div');
+        entry.className = 'mic-entry';
+        entry.id = 'mic-' + data.id;
+        entry.dataset.createdAt = String(Date.now());
+        // テキストノードで安全に挿入
+        const icon = document.createElement('span');
+        icon.className = 'mic-icon';
+        icon.textContent = 'MIC';
+        const textSpan = document.createElement('span');
+        textSpan.textContent = data.text;
+        const status = document.createElement('span');
+        status.className = 'mic-status unread';
+        status.textContent = '\u672A\u8AAD';
+        entry.appendChild(icon);
+        entry.appendChild(textSpan);
+        entry.appendChild(status);
+        queue.appendChild(entry);
+        // 古いエントリを4件まで保持
+        while (queue.children.length > 4) {
+          queue.removeChild(queue.firstChild);
+        }
+      });
+
+      // --- mic-processed: 既読にして最低表示時間後にエフェクト付きで消す ---
+      es.addEventListener('mic-processed', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.id === undefined) return;
+        const entry = document.getElementById('mic-' + data.id);
+        if (entry) {
+          // 未読→既読に変更
+          const statusEl = entry.querySelector('.mic-status');
+          if (statusEl) {
+            statusEl.textContent = '\u65E2\u8AAD';
+            statusEl.className = 'mic-status read';
+          }
+          const MIN_DISPLAY_MS = 5000;
+          const createdAt = parseInt(entry.dataset.createdAt || '0', 10);
+          const elapsed = Date.now() - createdAt;
+          const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
+          setTimeout(() => {
+            entry.classList.add('processed');
+            entry.addEventListener('animationend', () => entry.remove(), { once: true });
+          }, remaining);
+        }
       });
 
       es.onerror = () => {

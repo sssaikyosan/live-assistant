@@ -450,12 +450,14 @@ async def _transcribe_and_enqueue(ctx: AppContext, speech_buf: list[np.ndarray])
         ctx.recent_texts.pop(0)
 
     event = {
+        "id": uuid.uuid4().hex[:8],
         "text": text,
         "time": time.time(),
         "source": "mic",
         "duration_sec": round(duration, 1),
     }
     await ctx.event_queue.put(event)
+    await _broadcast_sse(ctx, "mic-text", json.dumps({"id": event["id"], "text": text}))
 
 
 async def _mic_loop_with_restart(ctx: AppContext) -> None:
@@ -743,6 +745,11 @@ async def _wait_for_comments_impl(
 
     # 履歴スナップショット (要求された場合のみ)
     history_snapshot = list(app_ctx.history) if include_history else None
+
+    # mic イベントの処理済み通知を送信
+    for item in results:
+        if item.get("source") == "mic" and "id" in item:
+            await _broadcast_sse(app_ctx, "mic-processed", json.dumps({"id": item["id"]}))
 
     # 新規アイテムを履歴に追加
     for item in results:
