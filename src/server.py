@@ -766,7 +766,7 @@ async def _speak_impl(app_ctx: AppContext, text: str, *, speed_scale: float | No
 
 async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: float | None = None) -> str:
     """speak の排他ロック内で実行される本体。"""
-    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": "読み上げ中"}))
+    # 読み上げ中ステータスは口パク+字幕で視覚的にわかるため、activity は CLI 側で管理する
     # 配信者が発話中なら最大2秒待ってIDLEになるのを待つ
     for _ in range(20):  # 20 * 0.1s = 2s
         if app_ctx.mic_vad_state == "IDLE":
@@ -829,8 +829,6 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: flo
     except Exception as e:
         logger.warning("音声再生に失敗: %s", e)
         return f"音声再生に失敗しました: {e}"
-
-    await _broadcast_sse(app_ctx, "activity", json.dumps({"text": ""}))
 
     # 自分の発言を履歴に追加 (会話の順序を保持する)
     app_ctx.history.append({

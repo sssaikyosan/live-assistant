@@ -50,6 +50,11 @@ def _cmd_serve(_args: argparse.Namespace) -> int:
 
 
 def _cmd_wait(args: argparse.Namespace) -> int:
+    # 待機中ステータスを表示
+    try:
+        _request(args.base_url, "POST", "/api/activity", json_body={"text": "待機中"})
+    except Exception:
+        pass
     resp = _request(
         args.base_url,
         "POST",
@@ -60,6 +65,11 @@ def _cmd_wait(args: argparse.Namespace) -> int:
         },
         timeout=max(float(args.timeout_sec) + 5.0, 30.0),
     )
+    # 行動中ステータスに切り替え
+    try:
+        _request(args.base_url, "POST", "/api/activity", json_body={"text": "行動中"})
+    except Exception:
+        pass
     _print_json(resp.json())
     return 0
 
