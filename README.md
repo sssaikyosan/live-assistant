@@ -69,8 +69,8 @@ pip install -e .
 | `whisper` | `model` | `large-v3` | faster-whisper モデル (tiny/base/small/medium/large-v3) |
 | | `language` | `ja` | 認識言語 |
 | | `device` | `cuda` | 推論デバイス。GPU がない場合は `cpu` に変更 |
-| | `compute_type` | `auto` | 計算精度 |
-| | `beam_size` | `1` | ビームサーチ幅 |
+| | `compute_type` | `float16` | 計算精度。cpu推論の場合`int8`に設定 |
+| | `beam_size` | `5` | ビームサーチ幅 |
 | | `no_speech_threshold` | `0.8` | 無音判定の閾値 |
 
 > **CPU環境の推奨設定**: `model: small`, `device: cpu`, `compute_type: int8`

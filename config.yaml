@@ -30,5 +30,5 @@ whisper:
   language: "ja"
   device: "cuda"
   compute_type: "float16"
-  beam_size: 10
+  beam_size: 5
   no_speech_threshold: 0.8
