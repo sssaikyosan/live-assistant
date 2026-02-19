@@ -145,6 +145,11 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         await resp.prepare(request)
         ctx.sse_clients.append(resp)
         logger.info("[overlay] SSEクライアント接続 (total=%d)", len(ctx.sse_clients))
+        # 新規接続時に古い未読マイクメッセージをクリア
+        try:
+            await resp.write(f"event: mic-clear-all\ndata: {{}}\n\n".encode("utf-8"))
+        except Exception:
+            pass
         try:
             while not ctx.shutdown_event.is_set():
                 try:
@@ -239,6 +244,12 @@ def _create_http_app(ctx: AppContext) -> web.Application:
         if sync:
             result = await _speak_impl(ctx, text, speed_scale=speed_scale)
             return web.json_response({"result": result, "queued": False})
+
+        # 非同期モードでも BUSY を即座に返す (ロック中 or マイク発話中)
+        if ctx._speak_lock.locked():
+            return web.json_response({"result": "BUSY", "queued": False})
+        if ctx.mic_vad_state not in ("IDLE", "TRANSCRIBING"):
+            return web.json_response({"result": "BUSY", "queued": False})
 
         task = asyncio.create_task(_speak_impl(ctx, text, speed_scale=speed_scale))
         ctx.background_tasks.add(task)

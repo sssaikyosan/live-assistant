@@ -1,6 +1,6 @@
 ---
 name: live-assistant
-description: 配信アシスタントを `live-assistant` CLI で運用するための手順。わんコメ経由コメント受信、マイク文字起こし、VOICEVOX読み上げ、OBS配信画面取得、配信画面へのHTML要素オーバーレイを行う。
+description: 配信アシスタントを `live-assistant` CLI で運用するための手順。わんコメ経由コメント受信、マイク文字起こし、VOICEVOX読み上げ、OBS配信画面取得、配信画面へのHTML要素オーバーレイ、ComfyUI APIによる画像・音楽生成を行う。
 ---
 
 # Live Assistant Skill
@@ -13,7 +13,7 @@ description: 配信アシスタントを `live-assistant` CLI で運用するた
 
 1. `live-assistant wait --timeout-sec <秒>` でイベントを待機する。タイムアウト秒数は状況に応じて自分で判断する（例: 盛り上がっている時は短め、静かな時は長め）。
 2. `new` を確認し、応答すべき内容があれば返答を作り `speak` する。
-3. `speak` が `BUSY` を返したら、未応答の `new` は保持しループ先頭に戻る。新しい `new` があれば合わせて応答を作り直す（2秒の待機はサーバー側で行われる）。
+3. `speak` が `BUSY` を返したら、未応答の `new` は保持しループ先頭に戻る。新しい `new` があれば合わせて応答を作り直す。
 4. 自律行動（後述）が必要か判断し、必要なら実行する。
 5. ループ先頭に戻る。
 

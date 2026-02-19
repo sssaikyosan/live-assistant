@@ -466,6 +466,14 @@
         }
       });
 
+      // --- mic-clear-all: 古い未読メッセージを全てクリア ---
+      es.addEventListener('mic-clear-all', () => {
+        const queue = document.getElementById('mic-queue');
+        while (queue.firstChild) {
+          queue.removeChild(queue.firstChild);
+        }
+      });
+
       // --- mic-processed: 既読にして最低表示時間後にエフェクト付きで消す ---
       es.addEventListener('mic-processed', (e) => {
         const data = JSON.parse(e.data);
