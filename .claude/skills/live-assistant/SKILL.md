@@ -55,6 +55,14 @@ description: 配信アシスタントを `live-assistant` CLI で運用するた
 
 `overlay/slots/<name>.json` に Write ツールで JSON を書き込む。スロット名ごとに独立管理され、1つのスロットを変更しても他のスロットに影響しない。
 
+#### BGM管理
+
+BGMは `overlay/slots/bgm.json` スロットで管理する。
+
+#### ComfyUI 実行前の VRAM チェック
+
+ComfyUI でワークフローを実行する前に `nvidia-smi` で空き VRAM を確認し、十分な空きがある場合のみ実行する。
+
 #### ComfyUI 生成ファイルの参照
 
 ComfyUI で生成したファイル（画像・音楽）は ComfyUI の `/view?filename=<ファイル名>&type=output` エンドポイントで直接参照する。ComfyUI の URL・ポートは `config.yaml` を確認すること。ファイル名は ComfyUI の `/history` API レスポンスから取得できる。サイズ指定はピクセルではなく画面基準（vw/vh）を使う。スロット削除で停止・非表示にできる。
