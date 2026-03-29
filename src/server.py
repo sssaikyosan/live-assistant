@@ -245,11 +245,11 @@ def _create_http_app(ctx: AppContext) -> web.Application:
             result = await _speak_impl(ctx, text, speed_scale=speed_scale)
             return web.json_response({"result": result, "queued": False})
 
-        # 非同期モードでも BUSY を即座に返す (ロック中 or マイク発話中)
+        # 非同期モード: 実行不可の場合は理由を返す
         if ctx._speak_lock.locked():
-            return web.json_response({"result": "BUSY", "queued": False})
+            return web.json_response({"result": "前回のspeakで読み上げ中のため失敗しました。", "queued": False})
         if ctx.mic_vad_state not in ("IDLE", "TRANSCRIBING"):
-            return web.json_response({"result": "BUSY", "queued": False})
+            return web.json_response({"result": "配信者が発話中のためspeakに失敗しました。", "queued": False})
 
         task = asyncio.create_task(_speak_impl(ctx, text, speed_scale=speed_scale))
         ctx.background_tasks.add(task)
@@ -850,11 +850,11 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: flo
     # 読み上げ中ステータスは口パク+字幕で視覚的にわかるため、activity は CLI 側で管理する
     # 配信者が発話中なら最大2秒待ってIDLEになるのを待つ
     for _ in range(20):  # 20 * 0.1s = 2s
-        if app_ctx.mic_vad_state == "IDLE":
+        if app_ctx.mic_vad_state in ("IDLE", "TRANSCRIBING"):
             break
         await asyncio.sleep(0.1)
     else:
-        return f"BUSY: 2秒待機しましたが発話中です (state={app_ctx.mic_vad_state})"
+        return "配信者が発話中のためspeakに失敗しました。"
 
     voicevox_config = app_ctx.config.get("voicevox", {})
     base_url = voicevox_config.get("url", "http://localhost:50021").rstrip("/")
@@ -925,7 +925,7 @@ async def _speak_impl_locked(app_ctx: AppContext, text: str, *, speed_scale: flo
     if len(app_ctx.recent_texts) > 5:
         app_ctx.recent_texts.pop(0)
 
-    return f"読み上げ完了: {text}"
+    return "読み上げ開始成功"
 
 
 def _take_screenshot_jpeg(config: dict | None = None) -> bytes:

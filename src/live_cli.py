@@ -155,7 +155,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     speak = subparsers.add_parser("speak", help="VOICEVOXで読み上げ")
     speak.add_argument("text")
-    speak.add_argument("--sync", action="store_true", help="再生完了まで待つ")
+    speak.add_argument("--sync", action="store_true", default=True, help="再生完了まで待つ (デフォルト)")
+    speak.add_argument("--async", dest="sync", action="store_false", help="非同期モード (即座に戻る)")
     speak.add_argument("--speed", type=float, default=None, help="読み上げ速度 (1.0=通常)")
     speak.set_defaults(func=_cmd_speak)
 
