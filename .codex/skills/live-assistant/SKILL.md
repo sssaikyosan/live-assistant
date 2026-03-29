@@ -5,9 +5,11 @@ description: "`live-assistant` CLI で配信アシスタントを運用する。
 
 # Live Assistant Skill
 
-## Start Up
+## Startup
 
-`live-assistant status` を実行し、サービスが起動していることを確認してからループに入る。失敗したら `config.yaml` と外部サービスの起動状態を確認する。
+1. `live-assistant status` でサーバーの起動を確認する。
+2. 起動していなければ、バックグラウンドで `live-assistant serve` を実行する。
+3. サーバーが応答するまで数秒待ってから `status` で再確認する。失敗したら `config.yaml` と外部サービスの起動状態を確認する。
 
 ## Main Loop
 

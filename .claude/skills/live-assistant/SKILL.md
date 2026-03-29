@@ -5,9 +5,11 @@ description: 配信アシスタントを `live-assistant` CLI で運用するた
 
 # Live Assistant Skill
 
-## Prerequisites
+## Startup
 
-`live-assistant status` でサーバーが起動していることを確認してからループに入る。
+1. `live-assistant status` でサーバーの起動を確認する。
+2. 起動していなければ、Bash ツール (`run_in_background: true`) で `live-assistant serve` を実行する。Claude Code 終了時にサーバーも自動停止する。
+3. サーバーが応答するまで数秒待ってから `status` で再確認する。
 
 ## Main Loop
 
